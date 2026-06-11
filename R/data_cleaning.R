@@ -31,7 +31,8 @@ tidy_settled_da_lmps <- function(raw_settled_da_lmps){
     select("month":`2026`) |>
     pivot_longer(cols = `2013`:`2026`,
                  names_to = "year",
-                 values_to = "settled_avg_da_lmp")
+                 values_to = "settled_avg_da_lmp") |>
+    mutate(settled_avg_da_lmp = parse_number(settled_avg_da_lmp))
   
   clean_settled_da_lmps
 
