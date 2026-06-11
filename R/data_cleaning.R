@@ -12,8 +12,17 @@ raw_op_futures <- read_csv(
 
 raw_p_futures <- read_csv(
   "data/raw/peak_isone_historical_futures_2022_2026.csv"
+  ) |>
+  mutate(
+    `Delivery Month` = gsub("-", "", as.character(`Delivery Month`))
+  ) |>
+  mutate(
+    `Delivery Month` = paste0(
+      substr(`Delivery Month`, 3, 5),
+      substr(`Delivery Month`, 1, 2)
+    )
   )
-
+  
 # Function for cleaning the monthly avg lmps
 tidy_settled_da_lmps <- function(raw_settled_da_lmps){
   
@@ -84,6 +93,13 @@ futures <- clean_op_futures |>
       "delivery_year"
     )
   ) |>
-  mutate(price = (as.numeric(price.x) + as.numeric(price.y)/2)) |>
+  mutate(futures_price = round(((as.numeric(price.x) + as.numeric(price.y))/2),
+                               2)) |>
   select(-c(price.x, price.y))
+
+# Write clean data to new folder
+
+write_csv(clean_settled_da_lmps, "data/clean/settled_avg_da_lmps.csv")
+write_csv(futures, "data/clean/futures.csv")
+
 
