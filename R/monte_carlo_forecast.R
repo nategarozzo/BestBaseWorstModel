@@ -74,5 +74,3 @@ summarize_forecast <- function(simulation_results) {
   )
   
 }
-  
-}

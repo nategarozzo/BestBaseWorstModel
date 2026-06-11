@@ -55,7 +55,11 @@ model_data <- prep_futures_data(errors)
     )
 
 # Create smooth density curve representing pdf of z distribution
-z_density <- density(model_data$z)
+  z_density <- density(
+    model_data$z,
+    from = min(model_data$z),
+    to   = max(model_data$z)   # inv_cdf can't exceed what training saw
+  )
 
 # Create an inverse CDF of the z distribution
 
