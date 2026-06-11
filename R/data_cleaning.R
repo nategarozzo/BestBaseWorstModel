@@ -95,7 +95,8 @@ futures <- clean_op_futures |>
   ) |>
   mutate(futures_price = round(((as.numeric(price.x) + as.numeric(price.y))/2),
                                2)) |>
-  select(-c(price.x, price.y))
+  select(-c(price.x, price.y)) |>
+  filter(!is.na(futures_price))
 
 # Write clean data to new folder
 
