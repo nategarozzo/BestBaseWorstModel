@@ -5,7 +5,7 @@ futures <- read_csv("data/clean/futures.csv")
 monthly_lmps <- read_csv("data/clean/settled_avg_da_lmps.csv")
 
  
-futures_outcomes <- function(futures, monthly_lmps){
+calculate_errors <- function(futures, monthly_lmps){
  # Calculate errors for each futures price
   errors <- futures |>
     # Remove observations where delivery month is same as current month
@@ -31,3 +31,5 @@ futures_outcomes <- function(futures, monthly_lmps){
   
   errors
 }
+
+errors <- calculate_errors(futures, monthly_lmps)
