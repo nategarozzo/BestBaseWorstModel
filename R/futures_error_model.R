@@ -1,5 +1,6 @@
 # Load Packages
 library(tidyverse)
+select <- dplyr::select
 
 prep_futures_data <- function(errors) {
   

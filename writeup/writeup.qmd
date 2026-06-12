@@ -110,7 +110,7 @@ where:
 
 - $s(h)$ is a natural cubic spline evaluated at horizon h with 6 degrees of freedom
 
-Taking $s(h)$ as opposed to using $h$ directly is driven by a nonlinear relationship between forecast error and time to maturity. For example, a January contract 1 month out is being priced in December, when weather forecasts are volatile and a cold snap can drive up natural gas demand rapidly. However, a January contract 12 months out has a much more "general winter" expectation and there is plenty of time for the market to adjust to conditions. After fitting various functions to the scatterplot of the relationship between horizon and error, the spline with $df = 6$ was deemed the best match.
+Taking $s(h)$ as opposed to using $h$ directly is driven by a nonlinear relationship between forecast error and time to maturity. For example, a January contract 1 month out is being priced in December, when weather forecasts are volatile and a cold snap can drive up natural gas demand rapidly. However, a January contract 12 months out has a much more "general winter" expectation and there is plenty of time for the market to adjust to conditions. After fitting various functions to the scatter plot of the relationship between horizon and error, the natural cubic spline with $df = 6$ was selected. Unlike linear, log, and square root transformations, which all assume a monotonically decreasing relationship, the spline flexibility captures the wave-like pattern in the data.
 
 ```{r}
 errors |>
@@ -148,7 +148,7 @@ errors |>
     legend.position  = "bottom"
   )
 ```
-
+<br>
 2.  A Gamma Generalized linear model (GLM) is used to estimate the conditional variance of forecast errors as a function of delivery month, months to expiration, **and futures price**
 
 $$\log(\hat{\sigma}^2_{m,h,f}) = \gamma_m + \delta_m \log(h) + \phi f$$ where:
@@ -233,7 +233,7 @@ model_data |>
   )
 ```
 
-<br> The distribution across seasonal groups appears to be similar, but there are some noticeable differences, including the two large peaks below 0 in the summer and winter months, as well as the lighter left tails in the shoulder and winter months. It seems that the error and volatility models accounted for most of the differences in forecast errors across delivery months and time to expiration, but some seasonal differences in residual shape remain.
+<br> The distribution across seasonal groups appears to be similar, but there are some noticeable differences, including the pronounced peak below 0 in the winter months, as well as the heavier left tails in the shoulder and summer months. It seems that the error and volatility models accounted for most of the differences in forecast errors across delivery months and time to expiration, but some seasonal differences in residual shape remain.
 
 To account for this, the empirical distribution of the residuals is approximated separately depending on the expiration season of the contract. This ensures that the shape of the residual distribution reflects the varying characteristics of summer, winter, and shoulder month errors. For each season, kernel density estimation (KDE) is used to fit a smooth, continuous density curve to the observed values of $z$. The CDF is then derived, mapping each value of $z$ to the probability that a standardized residual falls below it. We invert the CDF to produce a function that maps a random draw $u$ from a Uniform distribution $U(0,1)$ to its corresponding value of $z$.
 
