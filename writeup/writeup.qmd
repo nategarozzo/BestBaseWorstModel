@@ -1,0 +1,215 @@
+---
+title: "ISONE DA LMP Futures Settlement Model"
+author: Nate Garozzo
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-title: "Contents"
+    number-sections: true
+    code-fold: false
+    code-tools: false
+    theme: flatly
+    embed-resources: true
+    fig-width: 8
+    fig-height: 5
+    fig-cap-location: bottom
+    tbl-cap-location: top
+    highlight-style: github
+    mainfont: "Georgia"
+    monofont: "Fira Code"
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("~/BestBaseWorstModel/R/run_pipeline.R")
+```
+
+```{css}
+p code, li code {
+  color: #333333 !important;
+  background-color: #f5f5f5;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+```
+
+## Introduction
+
+Consumers use ISONE DA-LMP (ISO-New England Day-Ahead locational marginal pricing) futures to hedge forward electricity expenses. However, the futures contract price on any given day provides no extra information about the distribution of expected outcomes for the settled price of the contract. Trained on historical futures and settlement data from 2022-2026 this model produces a predictive distribution for a base case (50th percentile), best case (10th percentile) and worst case (95th percentile) for consumers, given a day's futures contract price, settlement month, and time to settlement. Linear regression is used to estimate the conditional mean forecast error and a Gamma GLM to estimate the conditional variance. Finally, a Monte Carlo simulation is layered in to produce the distribution of expected outcomes. The goal for this model is to provide energy consumers in the ISONE territory with a better understanding of their forecasted expenses and whether or not they should be hedging their energy consumption.
+
+## Data
+
+There are three primary data sets used in this analysis. The first is `isone_settled_avg_da_lmp_2013_2026.csv` , which contains the average monthly settled DA-LMP in ISONE for every month from 2013-2026. After data wrangling and tidying, the cleaned data resembles the following sample:
+
+```{r}
+monthly_lmps |>
+  filter((month == "Jan" & year == "2018") |
+           (month == "Jul" & year == "2025")) |>
+  knitr::kable(
+    col.names = c("Month", "Year", "Settled Avg DA LMP"),
+    digits = 2,
+  )
+```
+
+<br> The next two are `off_peak_isone_historical_futures_2022_2026.csv` and `peak_isone_historical_futures_2022_2026.csv` , which contain the off-peak and peak daily settled futures contract prices (as far as 85 months ahead) from 11/18/2022 to 6/4/2026. For the purposes of training the model, and condensing the data, the off-peak and peak daily futures prices were averaged into a single futures contract price point. Below is another sample:
+
+```{r}
+futures |>
+  slice(1, 500) |>
+  knitr::kable(
+    col.names = c("Current Month", "Current Day", "Current Year", 
+                  "Delivery Month", "Delivery Year", "Futures Price"),
+    digits = 2,
+  )
+```
+
+<br> Merging these data frames, we can calculate the error ($\text{realized price - futures price}$) for every daily futures price prediction based on its settled monthly average DA-LMP:
+
+```{r}
+errors |>
+  slice(1, 505) |>
+  select(current_month, current_day, current_year, delivery_month, 
+         delivery_year, futures_price, error, months_out) |>
+  knitr::kable(
+    col.names = c("Cur. Month", "Cur. Day", "Cur. Year", "Del. Month",
+                  "Del. Year", "Futures Price", "Error", "Months Out"),
+    digits = 2,
+  )
+```
+
+<br> Since the original data sets did not overlap from 2013-2021, there were several observations with no error value. These were subsequently filtered out, as well as any contracts that were either expired or purchased during the delivery month ($\text{months out < 1}$).
+
+## Methodology
+
+Forecasting price ranges poses several challenges. First, observations taken on consecutive days are highly autocorrelated. If the error is large and positive on May 15, the error is also likely to be large and positive on May 16. Rather than modeling the time series of the errors directly, this model takes a different approach, treating each observation as a draw from a distribution defined by its delivery month and time to expiration. It tries to minimize the autocorrelation problem by asking "given a contract with these characteristics, what is the distribution of errors that we have historically observed?"
+
+A second challenge is seasonal variation in price levels and forecast uncertainty. Winter months display much higher volatility than summer months, which is explained largely by the sensitivity of New England electricity prices to natural gas markets. A model which assumed constant volatility for each month of the year would severely misrepresent the risk in several delivery months.
+
+The model has three primary components:
+
+1.  A linear regression estimates the conditional mean forecast error as a function of delivery month and months to expiration
+
+$$\hat{\mu}_{m,H} = \alpha_m + \beta_mlog(h)$$
+
+where:
+
+- $\hat{\mu}_{m,h}$ is the predicted mean forecast error for delivery month \$m\$ at horizon \$h\$
+
+- $\alpha_m$ is a month-specific intercept
+
+- $\beta_m$ is a month-specific slope on log time to expiration
+
+- $h$ is months to expiration
+
+Taking $log(h)$ as opposed to using $h$ directly is driven by a nonlinear relationship between forecast error and time to maturity. For example, a January contract 1 month out is being priced in December, when weather forecasts are volatile and a cold snap can drive up natural gas demand rapidly. However, a January contract 12 months out has a much more "general winter" expectation and there is plenty of time for the market to adjust to conditions.
+
+2.  A Gamma Generalized linear model (GLM) is used to estimate the conditional variance of forecast errors as a function of delivery month, months to expiration, **and futures price**
+
+$$\log(\hat{\sigma}^2_{m,h,f}) = \gamma_m + \delta_m \log(h) + \phi f$$ where:
+
+- $\hat{\sigma}^2_{m,h,f}$ is the predicted error variance for delivery month $m$, horizon $h$, and futures price $f$
+
+- $\gamma_m$ is a month-specific intercept
+
+- $\delta_m$ is a month-specific slope on log time to expiration
+
+- $\phi$ is the coefficient on futures price $f$
+
+- The log link $\log(\hat{\sigma}^2_{m,h,f})$ makes sure that the variance is strictly positive
+
+  Looking at a plot of the squared residuals from the error model ($\text{residual}^2 = (e_{m,h} - \mu_{m,h})^2$), we can see that the distribution roughly follows a Gamma distribution, which is strictly positive and right-skewed.
+
+```{r}
+model_data |>
+  ggplot(aes(x = residual_sq)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 200,
+                 fill = "#2980b9", alpha = 0.6) +
+  geom_density(fill = "#e74c3c", alpha = 0.2, color = "#e74c3c", linewidth = 0.8) +
+  coord_cartesian(xlim = c(0, quantile(model_data$residual_sq, 0.95)),
+                  ylim = c(0, 0.003)) +
+  labs(
+    title = "Distribution of Squared Residuals",
+    x     = "Squared Residual",
+    y     = "Density"
+  ) +
+  theme_minimal(base_family = "Georgia") +
+  theme(
+    plot.title       = element_text(size = 13, face = "bold"),
+    axis.title       = element_text(size = 10),
+    panel.grid.minor = element_blank()
+  )
+```
+
+<br> Therefore a Gamma GLM is applied to model the conditional variance of the errors rather than a linear model. Unlike the error model, futures price is included as a predictor. This reflects the observation that forecast uncertainty scales with a contract's price level. For instance, a January futures contract priced at \$150 carries far more volatility than a January contract priced at \$50, even if they have the same time to expiration.
+
+3.  A predictive distribution of standardized residuals, based on the conditional mean $\hat{\mu}_{m,h}$ , conditional variance $\hat{\sigma}^2_{m,h,f}$, and each observed residual $e_i$
+
+    $$z_i = \frac{e_i - \hat{\mu}_{m, h}}{\hat{\sigma}^2_{m,h,f}}$$
+
+where:
+
+- $\hat{\mu}_{m,h}$ is the predicted mean forecast error for delivery month $m$ at horizon $h$
+
+- $e_i$ is the observed forecast error
+
+- $\hat{\mu}_{m, h}$ is the fitted mean error from the error model
+
+- $\hat{\sigma}^2_{m,h,f}$ is the fitted standard deviation from the volatility model
+
+  After adjusting for the conditional mean and scaling by the conditional standard deviation, the residuals should be distributed consistently regardless of the specific month or season. If the standardized residuals were centered well above or below 0 for a particular season, the error model would be systematically over or undepredicting errors for that group. If the spread were drastically wider or narrower for a particular season, then the volatility model would not be capturing the difference in uncertainty across months.
+
+```{r}
+model_data |>
+  mutate(
+    month_group = case_when(
+      delivery_month %in% c("Jan", "Feb", "Dec") ~ "Winter",
+      delivery_month %in% c("Jun", "Jul", "Aug") ~ "Summer",
+      TRUE ~ "Shoulder Months"
+    )
+  ) |>
+  ggplot(aes(x = z)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 60,
+                 fill = "#2980b9", alpha = 0.6) +
+  geom_density(color = "#e74c3c", linewidth = 0.8) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  facet_wrap(~ month_group) +
+  labs(
+    title = "Distribution of Standardized Residuals by Season",
+    x     = "Standardized Residual (z)",
+    y     = "Density"
+  ) +
+  theme_minimal(base_family = "Georgia") +
+  theme(
+    plot.title       = element_text(size = 13, face = "bold"),
+    axis.title       = element_text(size = 10),
+    panel.grid.minor = element_blank(),
+    strip.text       = element_text(size = 10, face = "bold")
+  )
+```
+
+<br> The distribution across seasonal groups appears to be similar, but there are some noticeable differences, including the two large peaks below 0 in the summer and winter months, as well as the lighter left tails in the shoulder and winter months. It seems that the error and volatility models accounted for most of the differences in forecast errors across delivery months and time to expiration, but some seasonal differences in residual shape remain.
+
+To account for this, the empirical distribution of the residuals is approximated separately depending on the expiration season of the contract. This ensures that the shape of the residual distribution reflects the varying characteristics of summer, winter, and shoulder month errors. For each season, kernel density estimation (KDE) is used to fit a smooth, continuous density curve to the observed values of $z$. The CDF is then derived, mapping each value of $z$ to the probability that a standardized residual falls below it. We invert the CDF to produce a function that maps a random draw $u$ from a Uniform distribution $U(0,1)$ to its corresponding value of $z$.
+
+$$z = F^{-1}(u)$$
+
+A Monte Carlo simulation follows: Take 10,000 uniform draws and pass them through the CDF to get 10,000 draws of $z$ that follow the empirical shape of the standardized residual distribution for that contract's expiration season.
+
+Finally, the simulated settlement price is computed as
+
+$$\tilde{S} = f + \hat{\mu}_{m,h} + \hat{\sigma}_{m,h,f} \cdot z$$
+where:
+
+- $\tilde{S}$ is a simulated settlement price
+- $f$ is the current futures price
+- $\hat{\mu}_{m,h}$ is the predicted mean error from the error model
+- $\hat{\sigma}_{m,h,f}$ is the predicted standard deviation from the volatility model
+- $z$ is a draw from the seasonal empirical inverse CDF
+

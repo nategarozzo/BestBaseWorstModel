@@ -49,35 +49,34 @@ error_model <- lm(
       fitted_sd = sqrt(fitted_var)
     )
   
-# Standardize residuals
+  # Standardize residuals
   model_data <- model_data |>
     mutate(
-      z = residual/fitted_sd
+      z = residual / fitted_sd,
+      season = case_when(
+        delivery_month %in% c("Dec", "Jan", "Feb") ~ "winter",
+        delivery_month %in% c("Jun", "Jul", "Aug") ~ "summer",
+        TRUE                                        ~ "shoulder"
+      )
     )
-
-# Create smooth density curve representing pdf of z distribution
-  z_density <- density(
-    model_data$z,
-    from = min(model_data$z),
-    to   = max(model_data$z)   # inv_cdf can't exceed what training saw
+  
+  # Build seasonal inverse CDFs
+  build_inv_cdf <- function(z_vals) {
+    z_density <- density(z_vals, from = min(z_vals), to = max(z_vals))
+    cdf <- cumsum(z_density$y)
+    cdf <- cdf / max(cdf)
+    approxfun(x = cdf, y = z_density$x, rule = 2)
+  }
+  
+  inv_cdf_winter   <- build_inv_cdf(model_data$z[model_data$season == "winter"])
+  inv_cdf_summer   <- build_inv_cdf(model_data$z[model_data$season == "summer"])
+  inv_cdf_shoulder <- build_inv_cdf(model_data$z[model_data$season == "shoulder"])
+  
+  # Save model components
+  model_bundle <- list(
+    error_model      = error_model,
+    vol_model        = vol_model,
+    inv_cdf_winter   = inv_cdf_winter,
+    inv_cdf_summer   = inv_cdf_summer,
+    inv_cdf_shoulder = inv_cdf_shoulder
   )
-
-# Create an inverse CDF of the z distribution
-
-cdf <- cumsum(z_density$y)
-cdf <- cdf / max(cdf)
-
-inv_cdf <- approxfun(
-  x = cdf,
-  y = z_density$x,
-  rule = 2
-)
-
-# Save model components
-
-model_bundle <- list(
-  error_model = error_model,
-  vol_model = vol_model,
-  z_density = z_density,
-  inv_cdf = inv_cdf
-)

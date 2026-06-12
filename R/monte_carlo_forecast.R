@@ -28,9 +28,18 @@ forecast_prices <- function(
   
   sd_hat <- sqrt(var_hat)
   
-  z_sim <- model_bundle$inv_cdf(
-    runif(n_sim)
+  inv_cdf <- switch(
+    case_when(
+      delivery_month %in% c("Dec", "Jan", "Feb") ~ "winter",
+      delivery_month %in% c("Jun", "Jul", "Aug") ~ "summer",
+      TRUE                                        ~ "shoulder"
+    ),
+    winter   = model_bundle$inv_cdf_winter,
+    summer   = model_bundle$inv_cdf_summer,
+    shoulder = model_bundle$inv_cdf_shoulder
   )
+  
+  z_sim <- inv_cdf(runif(n_sim))
   
   # Eliminates negative DA LMP
   settlement_sim <- pmax(
@@ -64,7 +73,7 @@ summarize_forecast <- function(simulation_results) {
     p25_settlement = quantile(simulations, 0.25),  # mild downside
     p50_settlement = quantile(simulations, 0.50),  # median
     p75_settlement = quantile(simulations, 0.75),  # mild upside
-    p90_settlement = quantile(simulations, 0.90)   # bullish case
+    p95_settlement = quantile(simulations, 0.95)   # bullish case
   )
   
 }
