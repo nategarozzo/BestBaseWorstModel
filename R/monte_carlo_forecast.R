@@ -1,7 +1,6 @@
 # Load packages
 library(tidyverse)
 
-
 forecast_prices <- function(
     model_bundle,
     delivery_month,
@@ -40,7 +39,6 @@ forecast_prices <- function(
   )
   
   # Return simulation info
-  
   list(
     forecast = settlement_sim,
     delivery_month = delivery_month,
