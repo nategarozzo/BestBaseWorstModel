@@ -18,8 +18,9 @@ prep_futures_data <- function(errors) {
 model_data <- prep_futures_data(errors)
 
 # Fit error model
-  error_model <- lm(
-  error ~ factor(delivery_month) * months_out,
+error_model <- lm(
+  # log(months) accounts for nonlinear relationship with errors and vol
+  error ~ factor(delivery_month) * log(months_out),
   data = model_data
 )
 
@@ -33,11 +34,11 @@ model_data <- prep_futures_data(errors)
 
 # Fit volatility model EXPLAIN WHY
   vol_model <- glm(
-    residual_sq ~ factor(delivery_month) * months_out,
+    residual_sq ~ factor(delivery_month) * log(months_out) + futures_price,
     family = Gamma(link = "log"),
     data = model_data
   )
-  
+
 # Fit volatility model to data
   model_data <- model_data |>
     mutate(
@@ -63,12 +64,12 @@ model_data <- prep_futures_data(errors)
 
 # Create an inverse CDF of the z distribution
 
-cdf <- cumsum(final_z_model$y)
+cdf <- cumsum(z_density$y)
 cdf <- cdf / max(cdf)
 
 inv_cdf <- approxfun(
   x = cdf,
-  y = final_z_model$x,
+  y = z_density$x,
   rule = 2
 )
 
@@ -77,6 +78,6 @@ inv_cdf <- approxfun(
 model_bundle <- list(
   error_model = error_model,
   vol_model = vol_model,
-  z_density = final_z_model,
+  z_density = z_density,
   inv_cdf = inv_cdf
 )

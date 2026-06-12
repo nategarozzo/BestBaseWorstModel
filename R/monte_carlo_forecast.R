@@ -12,7 +12,8 @@ forecast_prices <- function(
   
   contract <- tibble(
     delivery_month = delivery_month,
-    months_out = months_out
+    months_out = months_out,
+    futures_price = futures_price
   )
   
   mu_hat <- predict(
@@ -32,10 +33,11 @@ forecast_prices <- function(
     runif(n_sim)
   )
   
-  settlement_sim <-
-    futures_price +
-    mu_hat +
-    sd_hat * z_sim
+  # Eliminates negative DA LMP
+  settlement_sim <- pmax(
+    futures_price + mu_hat + sd_hat * z_sim,
+    0
+  )
   
   # Return simulation info
   
@@ -52,25 +54,19 @@ summarize_forecast <- function(simulation_results) {
   simulations <- simulation_results$forecast
   
   tibble(
-    delivery_month = simulation_results$delivery_month,
-    months_out = simulation_results$months_out,
-    futures_price = simulation_results$futures_price,
+    delivery_month        = simulation_results$delivery_month,
+    months_out            = simulation_results$months_out,
+    futures_price         = simulation_results$futures_price,
     
-    expected_settlement = mean(simulations),
-    expected_error =
-      mean(simulations) - simulation_results$futures_price,
-    
+    expected_settlement   = mean(simulations),
+    expected_error        = mean(simulations) - simulation_results$futures_price,
     settlement_volatility = sd(simulations),
     
-    downside_99 = quantile(simulations, 0.01),
-    downside_95 = quantile(simulations, 0.05),
-    downside_50 = quantile(simulations, 0.25),
-    
-    median_settlement = quantile(simulations, 0.50),
-    
-    upside_50 = quantile(simulations, 0.75),
-    upside_95 = quantile(simulations, 0.95),
-    upside_99 = quantile(simulations, 0.99)
+    p10_settlement = quantile(simulations, 0.10),  # bearish case
+    p25_settlement = quantile(simulations, 0.25),  # mild downside
+    p50_settlement = quantile(simulations, 0.50),  # median
+    p75_settlement = quantile(simulations, 0.75),  # mild upside
+    p90_settlement = quantile(simulations, 0.90)   # bullish case
   )
   
 }
