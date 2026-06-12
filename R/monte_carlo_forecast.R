@@ -69,7 +69,7 @@ summarize_forecast <- function(simulation_results) {
     expected_error        = mean(simulations) - simulation_results$futures_price,
     settlement_volatility = sd(simulations),
     
-    p10_settlement = quantile(simulations, 0.10),  # bearish case
+    p05_settlement = quantile(simulations, 0.05),  # bearish case
     p25_settlement = quantile(simulations, 0.25),  # mild downside
     p50_settlement = quantile(simulations, 0.50),  # median
     p75_settlement = quantile(simulations, 0.75),  # mild upside
