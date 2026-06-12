@@ -427,3 +427,31 @@ summary_table |>
 ```
 
 <br> Above is a sample output from the model, with a visual based on its predicted distribution for 3 different contracts and a supporting table. There are some noticeable differences between the distributions. For instance, July 3 months out is much more compact than both January distributions (which makes sense given the heightened uncertainty of prices in winter). January 24 months out is slightly narrower than January 3 months out, which has to do with the near-term volatility of short-horizon winter contracts. January 24 months out is also shifted much further right, displaying how horizon can have a significant impact on the expected error for a contract.
+
+**Assumptions, Limitations, and Future Work**
+
+1.  Assumptions
+
+- The relationship between forecast error, delivery month, and time to expiration is stable over time
+
+- Seasonal groupings sufficiently capture the differences in residual shapes across months
+
+- Monthly average DA LMP cannot be negative (a zero floor is applied to all simulations)
+
+- Peak and off-peak prices are equally weighted in computing the average futures price
+
+2.  Limitations
+
+- The model is trained on data that includes the 2021/2022 winter spike and post-COVID price volatility, which may distort estimates
+
+- No external factors, such as storage levels, gas basis, or weather forecasts are included in the model, limiting its ability to condition on market fundamentals
+
+- The model does not forecast where futures prices will move, only where they will land
+
+3.  Future work
+
+- Expanding the training data set to incorporate a broader range of historical data in the model
+
+- Walk-forward validation to properly assess out-of-sample performance
+
+- Handling of historical extreme winter events in price forecasting
