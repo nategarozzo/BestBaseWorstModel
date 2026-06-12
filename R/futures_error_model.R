@@ -19,8 +19,8 @@ model_data <- prep_futures_data(errors)
 
 # Fit error model
 error_model <- lm(
-  # log(months) accounts for nonlinear relationship with errors and vol
-  error ~ factor(delivery_month) * log(months_out),
+  # Spline (df=6) accounts for nonlinear relationship with errors and vol
+  error ~ factor(delivery_month) * splines::ns(months_out, df = 6),
   data = model_data
 )
 
@@ -34,7 +34,7 @@ error_model <- lm(
 
 # Fit volatility model EXPLAIN WHY
   vol_model <- glm(
-    residual_sq ~ factor(delivery_month) * log(months_out) + futures_price,
+    residual_sq ~ factor(delivery_month) * splines::ns(months_out, df = 6) + futures_price,
     family = Gamma(link = "log"),
     data = model_data
   )
