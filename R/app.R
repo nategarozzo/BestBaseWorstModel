@@ -47,7 +47,7 @@ server <- function(input, output, session) {
   results <- eventReactive(input$run, {
     req(input$report_file)
     
-    contracts <- read_xlsx(input$report_file$datapath) |>
+    contracts <- read_xlsx(input$report_file$datapath, skip = 1) |>
       select(`CONTRACT MONTH`, PRICE) |>
       rename(
         contract_month = `CONTRACT MONTH`,
