@@ -16,19 +16,19 @@ The app is designed for users who do not have to interact with the model directl
 
 The app takes in an ICE daily futures report and outputs both a table and visualization displaying the price settlement distribution for the contracts listed. To access the app, use [this link](https://nategarozzo.shinyapps.io/isone-lmp-forecast/), which takes you to an R Shiny application hosted on shinyapps.io. To make a forecast, upload an excel sheet of the daily ICE report:
 
-![](images/clipboard-132729246.png){style="border: 2px solid black;" width="500"}
+![](images/clipboard-132729246.png){width="500"}
 
 After uploading and hitting "Run Forecast", a table detailing the price distributions for each contract appears:
 
-![](images/clipboard-2263830655.png){style="border: 2px solid black;" width="644" height="280"}
+![](images/clipboard-2263830655.png){width="644" height="280"}
 
 Users may also inspect the distributions visually:
 
-![](images/clipboard-12252300.png){style="border: 2px solid black;"}
+![](images/clipboard-12252300.png)
 
 If you would like to download either the table as an excel sheet or an image of the distribution, you can do so by clicking near the bottom of the page:
 
-![](images/clipboard-3690506140.png){style="border: 2px solid black;"}
+![](images/clipboard-3690506140.png)
 
 **Note: App forecasts are capped at 30 months (2.5 years) out, due to lack of forecasting reliability past this point.**
 
@@ -36,7 +36,7 @@ If you would like to download either the table as an excel sheet or an image of 
 
 Below is a summary of the structure of this repository. All coding components (including the app) live in `/R`, all data (raw and cleaned) lives in `/data`, and the writeup .qmd/.html live in `/writeup`.
 
-![](images/clipboard-1582763670.png){style="border: 2px solid black;"}
+![](images/clipboard-1582763670.png)
 
 ## Data
 
