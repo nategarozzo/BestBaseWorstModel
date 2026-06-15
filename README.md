@@ -6,8 +6,61 @@ This project is intended to predict the price distribution of ISO-New England (I
 
 1\. A Shiny App for uploading daily ICE futures reports and examining the resulting DA-LMP settlement distribution for each contract
 
-2\. A stastistical model that functions as the engine of the project, combining linear regression, a Gamma GLM, and Monte Carlo simulation to produce predictive price distributions
+2\. A stastistical model that functions as the engine of the project, combining linear regression, a Gamma GLM, and Monte Carlo simulation to produce predictive price distributions.
 
 The app is designed for users who do not have to interact with the model directly, but its components and statistical underpinnings are described in the full methodology write-up lined below:
 
 [Full Writeup](https://nategarozzo.github.io/BestBaseWorstModel/writeup/writeup.html)
+
+## App
+
+The app takes in an ICE daily futures report and outputs both a table and visualization displaying the price settlement distribution for the contracts listed. To access the app, use [this link](https://nategarozzo.shinyapps.io/isone-lmp-forecast/), which takes you to an R Shiny application hosted on shinyapps.io. To make a forecast, upload an excel sheet of the daily ICE report:
+
+![](images/clipboard-132729246.png){style="border: 2px solid black;" width="500"}
+
+After uploading and hitting "Run Forecast", a table detailing the price distributions for each contract appears:
+
+![](images/clipboard-2263830655.png){style="border: 2px solid black;" width="644" height="280"}
+
+Users may also inspect the distributions visually:
+
+![](images/clipboard-12252300.png){style="border: 2px solid black;"}
+
+If you would like to download either the table as an excel sheet or an image of the distribution, you can do so by clicking near the bottom of the page:
+
+![](images/clipboard-3690506140.png){style="border: 2px solid black;"}
+
+## File Structure
+
+Below is a summary of the structure of this repository. All coding components (including the app) live in `/R`, all data (raw and cleaned) lives in `/data`, and the writeup .qmd/.html live in `/writeup`.
+
+![](images/clipboard-1582763670.png){style="border: 2px solid black;"}
+
+## Data
+
+The model is trained on two primary data sources:
+
+1.  **ISONE settled monthly average DA LMP's from 2013-2026**
+2.  **ICE ISONE DA daily peak and off-peak fixed price futures from 2022-2026**
+
+To update the model with new data, add the latest settled LMP values to `data/raw/isone_settled_avg_da_lmp_2013_2026.csv`, the and the latest ICE report data to `data/raw/off_peak_isone_historical_futures_2022_2026.csv` and `peak_isone_historical_futures_2022_2026.csv`. Then rerun `R/run_pipeline.R`.
+
+## Requirements
+
+- `tidyverse` - Data wrangling and visualization
+
+- `lubridate` - Parsing dates
+
+- `readxl` - Reading ICE reports
+
+- `writexl` - Exporting forecast results
+
+- `shiny` - Web app framework
+
+- `splines` - Natural cubic spline transformations, used for fitting the model
+
+- `scales` - Formatting diagnostic outputs
+
+- `patchwork` - Combining ggplot visualizations
+
+- `knitr` - Clean table renderings

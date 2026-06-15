@@ -37,6 +37,13 @@ ui <- fluidPage(
       tabsetPanel(
         tabPanel("Forecast Results", br(), tableOutput("results_table")),
         tabPanel("Distributions",    br(), plotOutput("dist_plot", height = "500px"))
+      ),
+      br(),
+      fluidRow(
+        column(6, downloadButton("download_table", "Download Results (.xlsx)", 
+                                 style = "width: 100%")),
+        column(6, downloadButton("download_plot",  "Download Distribution (.png)", 
+                                 style = "width: 100%"))
       )
     )
   )
@@ -54,6 +61,7 @@ server <- function(input, output, session) {
         futures_price  = PRICE
       ) |>
       mutate(
+        futures_price      = as.numeric(futures_price),
         delivery_month     = substr(contract_month, 1, 3),
         delivery_year      = as.integer(paste0("20", substr(contract_month, 4, 5))),
         report_month       = month(as.Date(input$report_date)),
@@ -65,7 +73,7 @@ server <- function(input, output, session) {
         ),
         contract_label     = contract_month
       ) |>
-      filter(months_out > 0) |>
+      filter(months_out > 0, !is.na(futures_price)) |>
       select(contract_label, delivery_month, delivery_year, months_out, futures_price)
     
     contracts |>
@@ -187,6 +195,64 @@ server <- function(input, output, session) {
         legend.position  = "bottom"
       )
   })
+  output$download_table <- downloadHandler(
+    filename = function() {
+      paste0("isone_forecast_", Sys.Date(), ".xlsx")
+    },
+    content = function(file) {
+      results() |>
+        select(summary) |>
+        unnest(summary) |>
+        mutate(across(where(is.numeric), ~ round(.x, 2)),
+               months_out = as.integer(months_out)) |>
+        select(delivery_month, months_out, futures_price,
+               settlement_volatility, p05_settlement,
+               p50_settlement, p95_settlement) |>
+        rename(
+          "Month"          = delivery_month,
+          "Months Out"     = months_out,
+          "Futures Price"  = futures_price,
+          "Std. Deviation" = settlement_volatility,
+          "Best Case (p05)" = p05_settlement,
+          "Base Case (p50)" = p50_settlement,
+          "Worst Case (p95)" = p95_settlement
+        ) |>
+        writexl::write_xlsx(file)
+    }
+  )
+  
+  # Table/plot downloads
+  output$download_plot <- downloadHandler(
+    filename = function() {
+      paste0("isone_distribution_", Sys.Date(), ".png")
+    },
+    content = function(file) {
+      req(input$selected_contracts)
+      p <- results() |>
+        filter(label %in% input$selected_contracts) |>
+        mutate(draws = map(sim, ~ tibble(price = .x$forecast))) |>
+        select(contract_label, draws) |>
+        unnest(draws) |>
+        ggplot(aes(x = price, fill = contract_label, color = contract_label)) +
+        geom_density(alpha = 0.3, linewidth = 0.7) +
+        labs(
+          title    = "Simulated Settlement Price Distributions",
+          subtitle = "Each curve represents the predicted distribution for one contract",
+          x        = "Simulated Settlement Price ($/MWh)",
+          y        = "Density",
+          fill     = NULL,
+          color    = NULL
+        ) +
+        theme_minimal(base_size = 13) +
+        theme(
+          plot.title       = element_text(size = 14, face = "bold"),
+          plot.subtitle    = element_text(size = 11, color = "gray40"),
+          panel.grid.minor = element_blank(),
+          legend.position  = "bottom"
+        )
+      ggsave(file, plot = p, width = 10, height = 6, dpi = 300)
+    }
+  )
 }
 
 shinyApp(ui, server)
