@@ -81,3 +81,5 @@ error_model <- lm(
     inv_cdf_summer   = inv_cdf_summer,
     inv_cdf_shoulder = inv_cdf_shoulder
   )
+  
+saveRDS(model_bundle, "model_bundle.rds")

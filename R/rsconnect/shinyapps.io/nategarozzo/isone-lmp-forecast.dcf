@@ -1,0 +1,10 @@
+name: isone-lmp-forecast
+title:
+username: nategarozzo
+account: nategarozzo
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17510095
+bundleId: 12128239
+url: https://nategarozzo.shinyapps.io/isone-lmp-forecast/
+version: 1
