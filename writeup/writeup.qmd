@@ -110,7 +110,7 @@ where:
 
 - $s(h)$ is a natural cubic spline evaluated at horizon h with 6 degrees of freedom
 
-Taking $s(h)$ as opposed to using $h$ directly is driven by a nonlinear relationship between forecast error and time to maturity. For example, a January contract 1 month out is being priced in December, when weather forecasts are volatile and a cold snap can drive up natural gas demand rapidly. However, a January contract 12 months out has a much more "general winter" expectation and there is plenty of time for the market to adjust to conditions. After fitting various functions to the scatter plot of the relationship between horizon and error, the natural cubic spline with $df = 6$ was selected. Unlike linear, log, and square root transformations, which all assume a monotonically decreasing relationship, the spline flexibility captures the wave-like pattern in the data.
+Taking $s(h)$ as opposed to using $h$ directly is driven by a nonlinear relationship between forecast error and time to maturity. For example, a January contract 1 month out is being priced in December, when weather forecasts are volatile and a cold snap can drive up natural gas demand rapidly. However, a January contract 12 months out has a much more "general winter" expectation and there is plenty of time for the market to adjust to conditions. After fitting various functions to the scatter plot of the relationship between horizon and error, the natural cubic spline with $df = 6$ was selected. Unlike linear, log, and square root transformations, which all assume a monotonically decreasing relationship, the spline flexibility captures the wave-like pattern in the data. A sine function was considered due to this wave pattern, but it did not capture the asymmetry between peaks and troughs. The natural cubic spline makes no assumptions about the period or symmetry of the relationship, and instead the curve is shaped by the data itself.
 
 ```{r}
 errors |>
@@ -127,22 +127,24 @@ errors |>
               aes(color = "Square Root"), linewidth = 0.7) +
   geom_smooth(method = "lm", formula = y ~ splines::ns(x, df = 6), se = FALSE,
               aes(color = "Spline (df=6)"), linewidth = 0.7) +
+  geom_smooth(method = "lm", formula = y ~ sin(2 * pi * x / 12) + x, se = FALSE,
+              aes(color = "Sine"), linewidth = 0.7) +
   scale_color_manual(values = c(
     "Linear"        = "#e74c3c",
     "Log"           = "#27ae60",
     "Square Root"   = "#e67e22",
-    "Spline (df=6)" = "#8e44ad"
+    "Spline (df=6)" = "#8e44ad",
+    "Sine"          = "#2980b9"
   )) +
   labs(
-    title    = "Forecast Error Volatility by Time to Maturity",
-    x        = "Months to Expiry",
-    y        = "Std. Dev. of Error ($/MWh)",
-    color    = NULL
+    title = "Forecast Error Volatility by Time to Maturity",
+    x     = "Months to Expiry",
+    y     = "Std. Dev. of Error ($/MWh)",
+    color = NULL
   ) +
   theme_minimal(base_family = "Georgia") +
   theme(
     plot.title       = element_text(size = 13, face = "bold"),
-    plot.subtitle    = element_text(size = 10, color = "gray40"),
     axis.title       = element_text(size = 10),
     panel.grid.minor = element_blank(),
     legend.position  = "bottom"
@@ -430,7 +432,7 @@ summary_table |>
 
 **Assumptions, Limitations, and Future Work**
 
-1.  Assumptions
+1.  *Assumptions*
 
 - The relationship between forecast error, delivery month, and time to expiration is stable over time
 
@@ -440,7 +442,7 @@ summary_table |>
 
 - Peak and off-peak prices are equally weighted in computing the average futures price
 
-2.  Limitations
+2.  *Limitations*
 
 - The model is trained on data that includes the 2021/2022 winter spike and post-COVID price volatility, which may distort estimates
 
@@ -448,10 +450,12 @@ summary_table |>
 
 - The model does not forecast where futures prices will move, only where they will land
 
-3.  Future work
+- Data points on consecutive days are highly autocorrelated
+
+3.  *Future work*
 
 - Expanding the training data set to incorporate a broader range of historical data in the model
 
-- Walk-forward validation to properly assess out-of-sample performance
+- Continuing to evaluate model performance by evaluating on new data as it emerges
 
 - Handling of historical extreme winter events in price forecasting
