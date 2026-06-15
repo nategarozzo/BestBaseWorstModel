@@ -10,4 +10,4 @@ This project is intended to predict the price distribution of ISO-New England (I
 
 The app is designed for users who do not have to interact with the model directly, but its components and statistical underpinnings are described in the full methodology write-up lined below:
 
-LINK
+[Full Writeup](https://nategarozzo.github.io/BestBaseWorstModel/writeup/writeup.html)
