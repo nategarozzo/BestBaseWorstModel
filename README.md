@@ -30,6 +30,8 @@ If you would like to download either the table as an excel sheet or an image of 
 
 ![](images/clipboard-3690506140.png){style="border: 2px solid black;"}
 
+**Note: App forecasts are capped at 30 months (2.5 years) out, due to lack of forecasting reliability past this point.**
+
 ## File Structure
 
 Below is a summary of the structure of this repository. All coding components (including the app) live in `/R`, all data (raw and cleaned) lives in `/data`, and the writeup .qmd/.html live in `/writeup`.

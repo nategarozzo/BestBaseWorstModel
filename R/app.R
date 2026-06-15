@@ -55,7 +55,7 @@ server <- function(input, output, session) {
     req(input$report_file)
     
     contracts <- read_xlsx(input$report_file$datapath, skip = 1) |>
-      select(`CONTRACT MONTH`, PRICE) |>
+      select(NAME, `CONTRACT MONTH`, PRICE) |>
       rename(
         contract_month = `CONTRACT MONTH`,
         futures_price  = PRICE
@@ -73,7 +73,7 @@ server <- function(input, output, session) {
         ),
         contract_label     = contract_month
       ) |>
-      filter(months_out > 0, !is.na(futures_price)) |>
+      filter(months_out > 0, months_out <= 30, !is.na(futures_price)) |>
       select(contract_label, delivery_month, delivery_year, months_out, futures_price)
     
     contracts |>
