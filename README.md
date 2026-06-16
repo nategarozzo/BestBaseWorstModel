@@ -24,7 +24,7 @@ After uploading and hitting "Run Forecast", a table detailing the price distribu
 
 Users may also inspect the distributions visually:
 
-![](images/isone_distribution_2026-06-15 (4).png){width="961"}
+![](images/isone_distribution_2026-06-15%20(4).png){width="961"}
 
 If you would like to download either the table as an excel sheet or an image of the distribution, you can do so by clicking near the bottom of the page:
 
@@ -34,7 +34,7 @@ If you would like to download either the table as an excel sheet or an image of 
 
 ## File Structure
 
-Below is a summary of the structure of this repository. All coding components (including the app) live in `/R`, all data (raw and cleaned) lives in `/data`, and the writeup .qmd/.html live in `/writeup`.
+Below is a summary of the structure of this repository. All coding components (including the app) live in `/R`, all data (raw and cleaned) lives in `/data`, and the write-up .qmd/.html live in `/writeup`.
 
 ![](images/clipboard-1582763670.png)
 

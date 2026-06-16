@@ -42,11 +42,11 @@ p code, li code {
 
 ## Introduction
 
-Consumers use ISONE DA-LMP (ISO-New England Day-Ahead locational marginal pricing) futures to hedge forward electricity expenses. However, the futures contract price on any given day provides no extra information about the distribution of expected outcomes for the settled price of the contract. Trained on historical futures and settlement data from 2022-2026, this model produces a predictive distribution for a base case (50th percentile), best case (10th percentile) and worst case (95th percentile) outcome for consumers, given a particular day's futures contract price, settlement month, and time to settlement. Linear regression is used to estimate the conditional mean forecast error and a Gamma GLM to estimate the conditional variance. Finally, a Monte Carlo simulation is layered in to produce the distribution of expected outcomes. The goal for this model is to provide energy consumers in the ISONE territory with a better understanding of their forecasted expenses and whether or not they should be hedging their energy consumption.
+Consumers use ISONE DA-LMP (ISO-New England Day-Ahead locational marginal pricing) futures to hedge forward electricity expenses. However, the individual futures contract price on any given day provides no extra information about the distribution of expected outcomes for the settled price of the contract. Trained on historical daily futures and settlement data from 2022-2026, this model produces a predictive distribution for a base case (50th percentile), best case (5th percentile) and worst case (95th percentile) settled price outcome for consumers, given a particular day's futures contract price, settlement month, and time to settlement (horizon). Linear regression is used to estimate the conditional mean forecast error (\$/MWh), and a Gamma GLM is used to estimate the conditional variance (\$/MWh). Finally, a Monte Carlo simulation is layered in to produce the distribution of expected outcomes. The goal for this model is to provide energy consumers in the ISONE territory with a better understanding of their forecasted expenses and whether or not they should be hedging their energy consumption.
 
 ## Data
 
-There are three primary data sets used in this analysis. The first is `isone_settled_avg_da_lmp_2013_2026.csv` , which contains the average monthly settled DA-LMP in ISONE for every month from 2013-2026. After data wrangling and tidying, the cleaned data resembles the following sample:
+There are three primary data sets used in this analysis. The first is `isone_settled_avg_da_lmp_2013_2026.csv` , which contains the average monthly settled DA LMP in ISONE for every month from 2013-2026. After data wrangling and tidying, the cleaned data is structured as in the following sample:
 
 ```{r}
 monthly_lmps |>
@@ -58,7 +58,7 @@ monthly_lmps |>
   )
 ```
 
-<br> The next two are `off_peak_isone_historical_futures_2022_2026.csv` and `peak_isone_historical_futures_2022_2026.csv` , which contain the off-peak and peak daily settled futures contract prices (as far as 85 months ahead) from 11/18/2022 to 6/4/2026. For the purposes of training the model, and condensing the data, the off-peak and peak daily futures prices were averaged into a single futures contract price point. Below is another sample:
+<br> The next two are `off_peak_isone_historical_futures_2022_2026.csv` and `peak_isone_historical_futures_2022_2026.csv` , which contain the off-peak and peak daily settled monthly average futures contract prices (as far as 85 months ahead) from 11/18/2022 to 6/4/2026. For the purposes of simplifying the model training process, the off-peak and peak daily futures prices were averaged into a single futures contract price point. Below is another sample of the cleaned data:
 
 ```{r}
 futures |>
@@ -70,7 +70,7 @@ futures |>
   )
 ```
 
-<br> Merging these data frames, we can calculate the error ($\text{realized price - futures price}$) for every daily futures price prediction based on its settled monthly average DA-LMP:
+<br> Merging these data frames, we can calculate the error ($\text{realized price - futures price}$) for every daily futures price prediction based on its settled monthly average DA LMP:
 
 ```{r}
 errors |>
@@ -84,13 +84,13 @@ errors |>
   )
 ```
 
-<br> Since the original data sets did not overlap from 2013-2021, there were several observations with no error value. These were subsequently filtered out, as well as any contracts that were either expired or purchased during the delivery month ($\text{months out < 1}$).
+<br> Since the original data sets did not overlap from 2013-2021, there were several observations with no error value. These were subsequently filtered out, as well as any contracts that were either expired or purchased during the delivery month ($\text{months out < 1}$). Additionally, any combinations of month and horizon (ex: October 8 months out) that had less than 20 historical observations were removed from the data set.
 
 ## Methodology
 
-Forecasting price ranges poses several challenges. First, observations taken on consecutive days are highly autocorrelated. If the error is large and positive on May 15, the error is also likely to be large and positive on May 16. Rather than modeling the time series of the errors directly, this model takes a different approach, treating each observation as a draw from a distribution defined by its delivery month and time to expiration. It tries to minimize the autocorrelation problem by asking "given a contract with these characteristics, what is the distribution of errors that we have historically observed?"
+Forecasting price ranges poses several challenges. First, observations taken on consecutive days are highly autocorrelated. If the error is large and positive on May 15, the error is also likely to be large and positive on May 16. Rather than modeling the time series of the errors directly, this model takes a different approach, treating each observation as a draw from a distribution defined by its delivery month and time to expiration. This does not solve the autocorrelation problem since consecutive observations in the training data remain correlated. However, the model's goal is not to predict tomorrow's price distribution, but rather the full range of outcomes at settlement. This means that autocorrelation in the training data is less of a concern because the model is evaluated across many years of historical contracts rather than within one contract's lifetime.
 
-A second challenge is seasonal variation in price levels and forecast uncertainty. Winter months display much higher volatility than summer months, which is explained largely by the sensitivity of New England electricity prices to natural gas markets. A model which assumes constant volatility for each month of the year would severely misrepresent the risk in several delivery months.
+A second challenge is seasonal variation in price levels and forecast uncertainty. Winter months display much higher volatility than summer months, which is explained largely by the sensitivity of New England electricity prices to natural gas markets (which are volatile during the winter months due to cold weather). A model which assumes constant volatility/standard deviation in settled price for each month of the year would severely misrepresent the risk in several delivery months.
 
 The model has three primary components:
 
@@ -110,7 +110,7 @@ where:
 
 - $s(h)$ is a natural cubic spline evaluated at horizon h with 6 degrees of freedom
 
-Taking $s(h)$ as opposed to using $h$ directly is driven by a nonlinear relationship between forecast error and time to maturity. For example, a January contract 1 month out is being priced in December, when weather forecasts are volatile and a cold snap can drive up natural gas demand rapidly. However, a January contract 12 months out has a much more "general winter" expectation and there is plenty of time for the market to adjust to conditions. After fitting various functions to the scatter plot of the relationship between horizon and error, the natural cubic spline with $df = 6$ was selected. Unlike linear, log, and square root transformations, which all assume a monotonically decreasing relationship, the spline flexibility captures the wave-like pattern in the data. A sine function was considered due to this wave pattern, but it did not capture the asymmetry between peaks and troughs. The natural cubic spline makes no assumptions about the period or symmetry of the relationship, and instead the curve is shaped by the data itself.
+Taking $s(h)$ as opposed to using $h$ directly is driven by a nonlinear relationship between forecast error and time to maturity. For example, a January contract 1 month out is being priced in December, when weather forecasts are volatile and a cold snap can drive up natural gas demand rapidly. However, a January contract 12 months out has a much more "general winter" expectation and there is plenty of time for the market to adjust to conditions. After fitting various functions to the scatter plot of the relationship between horizon and error, the natural cubic spline with $df = 6$ was selected. Unlike linear, log, and square root transformations, which all assume a monotonically increasing relationship, the spline flexibility captures the wave-like pattern in the data. A sine function was considered due to this wave pattern, but it did not capture the asymmetry between peaks and troughs. The natural cubic spline makes no assumptions about the period or symmetry of the relationship, and instead the curve is shaped by the data itself.
 
 ```{r}
 errors |>
@@ -165,9 +165,9 @@ $$\log(\hat{\sigma}^2_{m,h,f}) = \gamma_m + \delta_m s(h) + \phi f$$ where:
 
 - $s(h)$ is a natural cubic spline evaluated at horizon h with 6 degrees of freedom
 
-- The log link $\log(\hat{\sigma}^2_{m,h,f})$ makes sure that the variance is strictly positive
+- The log link $\log(\hat{\sigma}^2_{m,h,f})$ guarantee that the variance will be strictly positive
 
-  Looking at a plot of the squared residuals from the error model ($\text{residual}^2 = (e_{m,h} - \mu_{m,h})^2$), we can see that the distribution roughly follows a Gamma distribution, which is strictly positive and right-skewed.
+  Looking at a plot of the squared residuals from the error model ($\text{residual}^2 = (e_{m,h} - \mu_{m,h})^2$), we can see that the distribution roughly follows that of a Gamma distribution, which is strictly positive and right-skewed.
 
 ```{r}
 model_data |>
@@ -190,7 +190,7 @@ model_data |>
   )
 ```
 
-<br> Therefore a Gamma GLM is applied to model the conditional variance of the errors rather than a linear model. Unlike the error model, futures price is included as a predictor. This reflects the observation that forecast uncertainty scales with a contract's price level. For instance, a January futures contract priced at \$150 carries far more volatility than a January contract priced at \$50, even if they have the same time to expiration.
+<br> Therefore a Gamma GLM is applied to model the conditional variance of the errors rather than a linear model. While a linear model assumes the response variable is normally distributed, a Gamma GLM assumes a Gamma distribution. Unlike the error model, futures price is included as a predictor. This reflects the observation that forecast uncertainty scales with a contract's price level. For instance, a January futures contract priced at \$150 carries far more volatility than a January contract priced at \$50, even if they have the same time to expiration.
 
 3.  A predictive distribution of standardized residuals, based on the conditional mean $\hat{\mu}_{m,h}$ , conditional variance $\hat{\sigma}^2_{m,h,f}$, and each observed residual $e_i$
 
@@ -319,7 +319,7 @@ errors |>
   )
 ```
 
-Based on the table, all horizon groups seem to have roughly 90% coverage, which is encouraging. The only exception is very long horizons with a mean coverage of 0.853, which makes sense given the distance to settlement. The narrow interval percentage for short, medium, and long horizons ranges from 15.3%-20.8%. This figure is slightly higher than desired, but not too concerning. Wide interval percentage for medium, long, and very long horizons range from 66.7%-67.3%. This is a notable amount of over-coverage, but given the goal of this model, it is better to be overly cautious in predictions rather than too confident.. The wide interval percentage for short horizons is much lower at 40.3%, meaning the model operates with a high degree of precision in shorter time frames.
+Based on the table, all horizon groups seem to have roughly 90% coverage, which is encouraging. The only exception is very long horizons with a mean coverage of 0.853, which makes sense given the distance to settlement and uncertainty surrounding those contracts. The narrow interval percentage for short, medium, and long horizons ranges from 15.3%-20.8%. This figure is slightly higher than desired, but not too concerning. Wide interval percentage for medium, long, and very long horizons range from 66.7%-67.3%. This is a notable amount of over-coverage, but given the goal of this model to advise clinets, it is better to be overly cautious in predictions rather than too confident.. The wide interval percentage for short horizons is much lower at 40.3%, meaning the model operates with a high degree of precision in shorter time frames.
 
 **Bias**
 
