@@ -1,5 +1,6 @@
 # Load packages and data
 library(tidyverse)
+library(zoo)
 
 futures <- read_csv("data/clean/futures.csv")
 monthly_lmps <- read_csv("data/clean/settled_avg_da_lmps.csv")
@@ -33,3 +34,13 @@ calculate_errors <- function(futures, monthly_lmps){
 }
 
 errors <- calculate_errors(futures, monthly_lmps)
+
+errors <- errors |>
+  arrange(delivery_month, current_year, current_month_num) |>
+  group_by(delivery_month) |>
+  mutate(
+    rolling_mean_error = lag(
+      rollmean(error, k = 6, fill = NA, align = "right")
+    )
+  ) |>
+  ungroup()

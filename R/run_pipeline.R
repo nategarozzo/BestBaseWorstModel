@@ -7,6 +7,7 @@ setwd("~/BestBaseWorstModel")
 source("R/data_cleaning.R")
 source("R/calculate_errors.R")
 source("R/futures_error_model.R")
+source("R/add_rolling_mean.R")
 source("R/monte_carlo_forecast.R")
 
 # Edit contracts here

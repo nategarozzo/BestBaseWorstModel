@@ -9,10 +9,21 @@ forecast_prices <- function(
     n_sim = 10000
 ) {
   
+  # Look up rolling mean if available, otherwise use 0
+  if (!is.null(model_bundle$current_rolling_means)) {
+    rolling_mean_error <- model_bundle$current_rolling_means |>
+      filter(delivery_month == !!delivery_month) |>
+      pull(rolling_mean_error)
+    if (length(rolling_mean_error) == 0) rolling_mean_error <- 0
+  } else {
+    rolling_mean_error <- 0
+  }
+  
   contract <- tibble(
-    delivery_month = delivery_month,
-    months_out = months_out,
-    futures_price = futures_price
+    delivery_month     = delivery_month,
+    months_out         = months_out,
+    futures_price      = futures_price,
+    rolling_mean_error = rolling_mean_error
   )
   
   mu_hat <- predict(
