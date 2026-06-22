@@ -3,7 +3,6 @@ library(tidyverse)
 setwd("~/BestBaseWorstModel")
 
 # run pipeline
-
 source("R/data_cleaning.R")
 source("R/calculate_errors.R")
 source("R/futures_error_model.R")

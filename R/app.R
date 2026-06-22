@@ -131,7 +131,6 @@ server <- function(input, output, session) {
       )
   })
   
-  # Shared plot builder
   build_plot <- function(selected) {
     plot_data <- results() |>
       filter(label %in% selected) |>
@@ -168,9 +167,11 @@ server <- function(input, output, session) {
         label_text = paste0("$", round(price, 1))
       )
     
-    # Dynamic x axis breaks every $10
     x_min <- floor(min(plot_data$price) / 10) * 10
     x_max <- ceiling(max(plot_data$price) / 10) * 10
+    
+    x_clip_min <- quantile(plot_data$price, 0.01)
+    x_clip_max <- quantile(plot_data$price, 0.99)
     
     plot_data |>
       ggplot(aes(x = price, fill = contract_label, color = contract_label)) +
@@ -184,9 +185,9 @@ server <- function(input, output, session) {
         data        = quantile_labels,
         aes(x = price, y = density_val, label = label_text, color = contract_label),
         vjust       = -0.3, size = 2.8, show.legend = FALSE,
-        fill        = "white", label.size = 0, alpha = 0.8
+        fill        = "white", linewidth = 0, alpha = 0.8
       ) +
-      scale_x_continuous(breaks = seq(x_min, x_max, by = 10)) +
+      scale_x_continuous(breaks = seq(x_min, x_max, by = 50)) +
       labs(
         title    = "Simulated Settlement Price Distributions",
         subtitle = "Dashed lines indicate best (p05), base (p50), and worst (p95) case estimates",
@@ -201,7 +202,10 @@ server <- function(input, output, session) {
         plot.subtitle    = element_text(size = 11, color = "gray40"),
         panel.grid.minor = element_blank(),
         legend.position  = "bottom"
-      )
+      ) +
+      coord_cartesian(xlim = c(x_clip_min, x_clip_max)) +
+      scale_x_continuous(breaks = seq(floor(x_clip_min / 10) * 10, 
+                                      ceiling(x_clip_max / 10) * 10, by = 50))
   }
   
   output$dist_plot <- renderPlot({
@@ -223,12 +227,12 @@ server <- function(input, output, session) {
                settlement_volatility, p05_settlement,
                p50_settlement, p95_settlement) |>
         rename(
-          "Contract"        = contract,
-          "Months Out"      = months_out,
-          "Futures Price"   = futures_price,
-          "Std. Deviation"  = settlement_volatility,
-          "Best Case (p05)" = p05_settlement,
-          "Base Case (p50)" = p50_settlement,
+          "Contract"         = contract,
+          "Months Out"       = months_out,
+          "Futures Price"    = futures_price,
+          "Std. Deviation"   = settlement_volatility,
+          "Best Case (p05)"  = p05_settlement,
+          "Base Case (p50)"  = p50_settlement,
           "Worst Case (p95)" = p95_settlement
         ) |>
         writexl::write_xlsx(file)

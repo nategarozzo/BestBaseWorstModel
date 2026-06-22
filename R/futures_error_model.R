@@ -3,7 +3,6 @@ library(tidyverse)
 select <- dplyr::select
 
 prep_futures_data <- function(errors) {
-  
   model_data <- errors |>
     select(c(delivery_month, months_out, futures_price, error)) |>
     group_by(delivery_month, months_out) |>
@@ -67,13 +66,24 @@ inv_cdf_winter   <- build_inv_cdf(model_data$z[model_data$season == "winter"])
 inv_cdf_summer   <- build_inv_cdf(model_data$z[model_data$season == "summer"])
 inv_cdf_shoulder <- build_inv_cdf(model_data$z[model_data$season == "shoulder"])
 
+# Compute seasonal quantiles
+seasonal_quantiles <- list(
+  q05_winter   = quantile(inv_cdf_winter(runif(100000)),   0.05),
+  q05_summer   = quantile(inv_cdf_summer(runif(100000)),   0.05),
+  q05_shoulder = quantile(inv_cdf_shoulder(runif(100000)), 0.05),
+  q95_winter   = quantile(inv_cdf_winter(runif(100000)),   0.95),
+  q95_summer   = quantile(inv_cdf_summer(runif(100000)),   0.95),
+  q95_shoulder = quantile(inv_cdf_shoulder(runif(100000)), 0.95)
+)
+
 # Save model components
 model_bundle <- list(
-  error_model      = error_model,
-  vol_model        = vol_model,
-  inv_cdf_winter   = inv_cdf_winter,
-  inv_cdf_summer   = inv_cdf_summer,
-  inv_cdf_shoulder = inv_cdf_shoulder
+  error_model        = error_model,
+  vol_model          = vol_model,
+  inv_cdf_winter     = inv_cdf_winter,
+  inv_cdf_summer     = inv_cdf_summer,
+  inv_cdf_shoulder   = inv_cdf_shoulder,
+  seasonal_quantiles = seasonal_quantiles
 )
 
 saveRDS(model_bundle, "model_bundle.rds")

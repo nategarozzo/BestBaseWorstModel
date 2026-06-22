@@ -37,7 +37,7 @@ forecast_prices <- function(
     type = "response"
   )
   
-  sd_hat <- sqrt(var_hat)
+  sd_hat <- pmin(sqrt(var_hat), 60)
   
   inv_cdf <- switch(
     case_when(
@@ -52,18 +52,16 @@ forecast_prices <- function(
   
   z_sim <- inv_cdf(runif(n_sim))
   
-  # Eliminates negative DA LMP
   settlement_sim <- pmax(
     futures_price + mu_hat + sd_hat * z_sim,
     0
   )
   
-  # Return simulation info
   list(
-    forecast = settlement_sim,
+    forecast       = settlement_sim,
     delivery_month = delivery_month,
-    months_out = months_out,
-    futures_price = futures_price
+    months_out     = months_out,
+    futures_price  = futures_price
   )
 }
 
@@ -75,16 +73,13 @@ summarize_forecast <- function(simulation_results) {
     delivery_month        = simulation_results$delivery_month,
     months_out            = simulation_results$months_out,
     futures_price         = simulation_results$futures_price,
-    
     expected_settlement   = mean(simulations),
     expected_error        = mean(simulations) - simulation_results$futures_price,
     settlement_volatility = sd(simulations),
-    
-    p05_settlement = quantile(simulations, 0.05),  # bearish case
-    p25_settlement = quantile(simulations, 0.25),  # mild downside
-    p50_settlement = quantile(simulations, 0.50),  # median
-    p75_settlement = quantile(simulations, 0.75),  # mild upside
-    p95_settlement = quantile(simulations, 0.95)   # bullish case
+    p05_settlement        = quantile(simulations, 0.05),
+    p25_settlement        = quantile(simulations, 0.25),
+    p50_settlement        = quantile(simulations, 0.50),
+    p75_settlement        = quantile(simulations, 0.75),
+    p95_settlement        = quantile(simulations, 0.95)
   )
-  
 }

@@ -48,5 +48,6 @@ current_rolling_means <- errors_rolling |>
 # Add to existing model bundle — vol model unchanged
 model_bundle$error_model           <- error_model_rolling
 model_bundle$current_rolling_means <- current_rolling_means
+model_bundle$errors_rolling        <- errors_rolling
 
 saveRDS(model_bundle, "model_bundle.rds")
