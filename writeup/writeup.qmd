@@ -42,7 +42,7 @@ p code, li code {
 
 ## Introduction
 
-Consumers use ISONE DA-LMP (ISO-New England Day-Ahead locational marginal pricing) futures to hedge forward electricity expenses. However, the individual futures contract price on any given day provides no extra information about the distribution of expected outcomes for the settled price of the contract. Trained on historical daily futures and settlement data from 2022-2026, this model produces a predictive distribution for a base case (50th percentile), best case (5th percentile) and worst case (95th percentile) settled price outcome for consumers, given a particular day's futures contract price, settlement month, and time to settlement (horizon). Linear regression is used to estimate the conditional mean forecast error (\$/MWh), and a Gamma GLM is used to estimate the conditional variance (\$/MWh). Finally, a Monte Carlo simulation is layered in to produce the distribution of expected outcomes. The goal for this model is to provide energy consumers in the ISONE territory with a better understanding of their forecasted expenses and whether or not they should be hedging their energy consumption.
+Consumers use ISONE DA-LMP (ISO-New England Day-Ahead locational marginal pricing) futures to hedge forward electricity expenses. However, the individual futures contract price on any given day provides no extra information about the distribution of expected outcomes for the settled price of the contract. Trained on historical daily futures and settlement data from 2022-2026, this model produces a predictive distribution for a base case (50th percentile), best case (5th percentile) and worst case (90th percentile) settled price outcome for consumers, given a particular day's futures contract price, settlement month, and time to settlement (horizon). Linear regression is used to estimate the conditional mean forecast error (\$/MWh), and a Gamma GLM is used to estimate the conditional variance (\$/MWh). Finally, a Monte Carlo simulation is layered in to produce the distribution of expected outcomes. The goal for this model is to provide energy consumers in the ISONE territory with a better understanding of their forecasted expenses and whether or not they should be hedging their energy consumption.
 
 ## Data
 
@@ -179,7 +179,7 @@ model_data |>
   geom_histogram(aes(y = after_stat(density)), bins = 200,
                  fill = "#2980b9", alpha = 0.6) +
   geom_density(fill = "#e74c3c", alpha = 0.2, color = "#e74c3c", linewidth = 0.8) +
-  coord_cartesian(xlim = c(0, quantile(model_data$residual_sq, 0.95)),
+  coord_cartesian(xlim = c(0, quantile(model_data$residual_sq, 0.90)),
                   ylim = c(0, 0.003)) +
   labs(
     title = "Distribution of Squared Residuals",
@@ -194,7 +194,7 @@ model_data |>
   )
 ```
 
-<br> Therefore a Gamma GLM is applied to model the conditional variance of the errors rather than a linear model. While a linear model assumes the response variable is normally distributed, a Gamma GLM assumes a Gamma distribution. Unlike the error model, futures price is included as a predictor. This reflects the observation that forecast uncertainty scales with a contract's price level. For instance, a January futures contract priced at \$150 carries far more volatility than a January contract priced at \$50, even if they have the same time to expiration.
+<br> Therefore a Gamma GLM is applied to model the conditional variance of the errors rather than a linear model. While a linear model assumes the response variable is normally distributed, a Gamma GLM assumes a Gamma distribution. Unlike the error model, futures price is included as a predictor. This reflects the observation that forecast uncertainty scales with a contract's price level. For instance, a January futures contract priced at \$150 carries far more volatility than a January contract priced at \$97, even if they have the same time to expiration. However, this relationship becomes very unstable at very high futures price levels, where training data from the 2022-2023 energy crisis creates unreliability. To prevent the volatility model from extrapolating into this regime, the futures input into the volatility model is capped at \$70. While this cap is placed on the variance estimate, it is not applied to the actual futures price.
 
 3.  A predictive distribution of standardized residuals, based on the conditional mean $\hat{\mu}_{m,h}$ , conditional variance $\hat{\sigma}^2_{m,h,f}$, and each observed residual $e_i$
 
@@ -216,8 +216,10 @@ where:
 model_bundle$errors_rolling |>
   mutate(
     mu_hat    = predict(model_bundle$error_model, newdata = pick(everything())),
-    sd_hat    = pmin(sqrt(predict(model_bundle$vol_model, newdata = pick(everything()),
-                                  type = "response")), 60),
+    sd_hat    = sqrt(predict(model_bundle$vol_model,
+                         newdata = pick(everything()) |>
+                           mutate(futures_price = pmin(futures_price, 100)),
+                         type = "response")),
     z         = (error - mu_hat) / sd_hat,
     month_group = case_when(
       delivery_month %in% c("Jan", "Feb", "Dec") ~ "Winter",
@@ -246,7 +248,7 @@ model_bundle$errors_rolling |>
   )
 ```
 
-<br> The distribution across seasonal groups appears to be similar, but there are some noticeable differences, including the higher peaks in the winter and shoulder months, as well as the heavier left tails in the summer and winter months. It seems that the error and volatility models accounted for most of the differences in forecast errors across delivery months and time to expiration, but some seasonal differences in residual shape remain.
+<br> The distribution across seasonal groups appears to be similar, but there are some noticeable differences, including the higher peaks in the summer and shoulder months, as well as the heavier left tails in the summer and winter months. It seems that the error and volatility models accounted for most of the differences in forecast errors across delivery months and time to expiration, but some seasonal differences in residual shape remain.
 
 To account for this, the empirical distribution of the residuals is approximated separately depending on the expiration season of the contract. This ensures that the shape of the residual distribution reflects the varying characteristics of summer, winter, and shoulder month errors. For each season, kernel density estimation (KDE) is used to fit a smooth, continuous density curve to the observed values of $z$. The CDF is then derived, mapping each value of $z$ to the probability that a standardized residual falls below it. We invert the CDF to produce a function that maps a random draw $u$ from a Uniform distribution $U(0,1)$ to its corresponding value of $z$.
 
@@ -268,7 +270,7 @@ $$\tilde{S} = f + \hat{\mu}_{m,h} + \hat{\sigma}_{m,h,f} \cdot z$$ where:
 
 **Coverage**
 
-The first metric used to evaluate the model is coverage. Essentially, coverage encapsulates the proportion of model prediction intervals that contained the month's settled average DA LMP, given a specific month and horizon. For instance, take the expiration month March, and a horizon of 7 months. The model will predict a price distribution for every for every historical observation which matches those criteria, using the futures price at the time. If the realized price falls within the distribution, that observation is covered. The coverage for a particular month/horizon combination is $\frac{\text{\# covered}}{\text{\# total observations}}$ . Since the "Best" outcome cutoff is the 5th percentile, and the "Worst" cutoff is the 95th percentile, we would hope that at least 90% of historical observations are covered by the model. If a month/horizon combination is "too narrow", than means less than 80% of its historical outcomes were covered.
+The first metric used to evaluate the model is coverage. Essentially, coverage encapsulates the proportion of model prediction intervals that contained the month's settled average DA LMP, given a specific month and horizon. For instance, take the expiration month March, and a horizon of 7 months. The model will predict a price distribution for every for every historical observation which matches those criteria, using the futures price at the time. If the realized price falls within the distribution, that observation is covered. The coverage for a particular month/horizon combination is $\frac{\text{\# covered}}{\text{\# total observations}}$ . Since the "Best" outcome cutoff is the 5th percentile, and the "Worst" cutoff is the 90th percentile, we would hope that at least 85% of historical observations are covered by the model. If a month/horizon combination is "too narrow", than means less than 80% of its historical outcomes were covered.
 
 ```{r}
 model_bundle$errors_rolling |>
@@ -279,19 +281,21 @@ model_bundle$errors_rolling |>
       TRUE                                        ~ "shoulder"
     ),
     mu_hat = predict(model_bundle$error_model, newdata = pick(everything())),
-    sd_hat = pmin(sqrt(predict(model_bundle$vol_model, newdata = pick(everything()),
-                               type = "response")), 60),
+    sd_hat = sqrt(predict(model_bundle$vol_model,
+                      newdata = pick(everything()) |>
+                        mutate(futures_price = pmin(futures_price, 100)),
+                      type = "response")),
     p05 = futures_price + mu_hat + sd_hat * case_when(
       season == "winter"   ~ model_bundle$seasonal_quantiles$q05_winter,
       season == "summer"   ~ model_bundle$seasonal_quantiles$q05_summer,
       season == "shoulder" ~ model_bundle$seasonal_quantiles$q05_shoulder
     ),
-    p95 = futures_price + mu_hat + sd_hat * case_when(
-      season == "winter"   ~ model_bundle$seasonal_quantiles$q95_winter,
-      season == "summer"   ~ model_bundle$seasonal_quantiles$q95_summer,
-      season == "shoulder" ~ model_bundle$seasonal_quantiles$q95_shoulder
+    p90 = futures_price + mu_hat + sd_hat * case_when(
+      season == "winter"   ~ model_bundle$seasonal_quantiles$q90_winter,
+      season == "summer"   ~ model_bundle$seasonal_quantiles$q90_summer,
+      season == "shoulder" ~ model_bundle$seasonal_quantiles$q90_shoulder
     ),
-    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p95,
+    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p90,
     horizon = case_when(
       months_out <= 6  ~ "Short (1–6 months)",
       months_out <= 12 ~ "Medium (7–12 months)",
@@ -319,7 +323,7 @@ model_bundle$errors_rolling |>
   )
 ```
 
-Based on the table, all horizon groups seem to have roughly 95-97% coverage, which is encouraging. The only exception is very long horizons with a mean coverage of 0.850, which makes sense given the distance to settlement and uncertainty surrounding those contracts. The narrow interval percentage for short, medium, and long horizons ranges from 0-2.8%. This figure is very encouraging, and it means that the model is effectively capturing the ranges of outcomes for horizons 2 years or less. It is obvious that model performance deteriorates for very long horizons, but given the time to settlement, the performance is still encouraging.
+Based on the table, all horizon groups seem to have roughly 94-97% coverage, which is encouraging and well above the expected coverage. The only exception is very long horizons with a mean coverage of 0.818, which makes sense given the distance to settlement and uncertainty surrounding those contracts. The narrow interval percentage for short, medium, and long horizons ranges from 0-4.2%. This figure is strong, and it means that the model is effectively capturing the ranges of outcomes for horizons 2 years or less. It is obvious that model performance deteriorates for very long horizons, but given the time to settlement, the performance is still positive.
 
 **Bias**
 
@@ -369,19 +373,21 @@ bind_rows(
       TRUE                                        ~ "shoulder"
     ),
     mu_hat = predict(model_bundle$error_model, newdata = pick(everything())),
-    sd_hat = pmin(sqrt(predict(model_bundle$vol_model, newdata = pick(everything()),
-                               type = "response")), 60),
+    sd_hat = sqrt(predict(model_bundle$vol_model,
+                      newdata = pick(everything()) |>
+                        mutate(futures_price = pmin(futures_price, 100)),
+                      type = "response")),
     p05 = futures_price + mu_hat + sd_hat * case_when(
       season == "winter"   ~ model_bundle$seasonal_quantiles$q05_winter,
       season == "summer"   ~ model_bundle$seasonal_quantiles$q05_summer,
       season == "shoulder" ~ model_bundle$seasonal_quantiles$q05_shoulder
     ),
-    p95 = futures_price + mu_hat + sd_hat * case_when(
-      season == "winter"   ~ model_bundle$seasonal_quantiles$q95_winter,
-      season == "summer"   ~ model_bundle$seasonal_quantiles$q95_summer,
-      season == "shoulder" ~ model_bundle$seasonal_quantiles$q95_shoulder
+    p90 = futures_price + mu_hat + sd_hat * case_when(
+      season == "winter"   ~ model_bundle$seasonal_quantiles$q90_winter,
+      season == "summer"   ~ model_bundle$seasonal_quantiles$q90_summer,
+      season == "shoulder" ~ model_bundle$seasonal_quantiles$q90_shoulder
     ),
-    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p95
+    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p90
   ) |>
   group_by(delivery_month) |>
   summarise(
@@ -414,19 +420,21 @@ bind_rows(
       TRUE                                        ~ "shoulder"
     ),
     mu_hat = predict(model_bundle$error_model, newdata = pick(everything())),
-    sd_hat = pmin(sqrt(predict(model_bundle$vol_model, newdata = pick(everything()),
-                               type = "response")), 60),
+    sd_hat = sqrt(predict(model_bundle$vol_model,
+                           newdata = pick(everything()) |>
+                             mutate(futures_price = pmin(futures_price, 100)),
+                           type = "response")),
     p05 = futures_price + mu_hat + sd_hat * case_when(
       season == "winter"   ~ model_bundle$seasonal_quantiles$q05_winter,
       season == "summer"   ~ model_bundle$seasonal_quantiles$q05_summer,
       season == "shoulder" ~ model_bundle$seasonal_quantiles$q05_shoulder
     ),
-    p95 = futures_price + mu_hat + sd_hat * case_when(
-      season == "winter"   ~ model_bundle$seasonal_quantiles$q95_winter,
-      season == "summer"   ~ model_bundle$seasonal_quantiles$q95_summer,
-      season == "shoulder" ~ model_bundle$seasonal_quantiles$q95_shoulder
+    p90 = futures_price + mu_hat + sd_hat * case_when(
+      season == "winter"   ~ model_bundle$seasonal_quantiles$q90_winter,
+      season == "summer"   ~ model_bundle$seasonal_quantiles$q90_summer,
+      season == "shoulder" ~ model_bundle$seasonal_quantiles$q90_shoulder
     ),
-    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p95
+    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p90
   ) |>
   summarise(
     n        = n(),
@@ -438,7 +446,7 @@ bind_rows(
   )
 ```
 
-The out-of-sample coverage across all 12 months is extremely strong, with 10 of 12 months at or above 96% coverage. June is the most notable result at 87.6% coverage, but the overall out-of sample coverage is 98.8%, providing evidence that the model can generalize well to recent market conditions.
+The out-of-sample coverage across all 12 months is extremely strong, with 9 of 12 months at or above 95% coverage. January is the most notable result at 78.1% coverage, but the overall out-of sample coverage is 95.6%, providing evidence that the model can generalize well to recent market conditions.
 
 ## Results
 
@@ -451,7 +459,7 @@ library(patchwork)
 contracts <- tibble(
   delivery_month = c("Jan", "Jul", "Jan"),
   months_out     = c(3, 3, 24),
-  futures_price  = c(55, 35, 60),
+  futures_price  = c(80, 35, 85),
   label          = c("Jan 3mo", "Jul 3mo", "Jan 24mo")
 )
 
@@ -482,7 +490,7 @@ summary_table <- sims |>
   mutate(across(where(is.numeric), ~ round(.x, 2))) |>
   select(delivery_month, months_out, futures_price,
          settlement_volatility, p05_settlement,
-         p50_settlement, p95_settlement)
+         p50_settlement, p90_settlement)
 
 # Distribution plot
 p_dist <- sim_draws |>
@@ -516,7 +524,7 @@ p_dist
 summary_table |>
   knitr::kable(
     col.names = c("Month", "Months Out", "Futures Price", "Volatility ($/MWh)",
-                  "Best Case (p05)", "Base Case (p50)", "Worst Case (p95)"),
+                  "Best Case (p05)", "Base Case (p50)", "Worst Case (p90)"),
     caption   = "Sample Forecast Output"
   )
 ```
@@ -537,7 +545,7 @@ summary_table |>
 
 2.  *Limitations*
 
-- The model is trained on data that includes the 2021/2022 winter spike and post-COVID price volatility, which may distort estimates
+- The model is trained on data that includes the 2021/2022 winter spike and post-COVID price volatility, which may distort estimates -The rolling mean adjustment is capped at +/- 20 to prevent the model from overcorrecting during periods of extreme market dislocation, and the volatility model futures price input is capped at \$70 to prevent extrapolation at high futures price levels
 
 - No external factors, such as storage levels, gas basis, or weather forecasts are included in the model, limiting its ability to condition on market fundamentals
 

@@ -71,9 +71,9 @@ seasonal_quantiles <- list(
   q05_winter   = quantile(inv_cdf_winter(runif(100000)),   0.05),
   q05_summer   = quantile(inv_cdf_summer(runif(100000)),   0.05),
   q05_shoulder = quantile(inv_cdf_shoulder(runif(100000)), 0.05),
-  q95_winter   = quantile(inv_cdf_winter(runif(100000)),   0.95),
-  q95_summer   = quantile(inv_cdf_summer(runif(100000)),   0.95),
-  q95_shoulder = quantile(inv_cdf_shoulder(runif(100000)), 0.95)
+  q90_winter   = quantile(inv_cdf_winter(runif(100000)),   0.90),
+  q90_summer   = quantile(inv_cdf_summer(runif(100000)),   0.90),
+  q90_shoulder = quantile(inv_cdf_shoulder(runif(100000)), 0.90)
 )
 
 # Save model components

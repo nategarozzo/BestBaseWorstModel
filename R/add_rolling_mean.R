@@ -43,7 +43,8 @@ current_rolling_means <- errors_rolling |>
     with_ties = FALSE
   ) |>
   select(delivery_month, rolling_mean_error) |>
-  ungroup()
+  ungroup() |>
+  mutate(rolling_mean_error = pmin(pmax(rolling_mean_error, -20), 20))
 
 # Add to existing model bundle — vol model unchanged
 model_bundle$error_model           <- error_model_rolling

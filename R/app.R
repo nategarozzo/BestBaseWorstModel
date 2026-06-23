@@ -55,7 +55,7 @@ server <- function(input, output, session) {
     req(input$report_file)
     
     contracts <- read_xlsx(input$report_file$datapath, skip = 1) |>
-      select(NAME, `CONTRACT MONTH`, PRICE) |>
+      select(`CONTRACT MONTH`, PRICE) |>
       rename(
         contract_month = `CONTRACT MONTH`,
         futures_price  = PRICE
@@ -115,11 +115,11 @@ server <- function(input, output, session) {
         settlement_volatility = paste0("$", formatC(settlement_volatility, format = "f", digits = 2)),
         p05_settlement        = paste0("$", formatC(p05_settlement,        format = "f", digits = 2)),
         p50_settlement        = paste0("$", formatC(p50_settlement,        format = "f", digits = 2)),
-        p95_settlement        = paste0("$", formatC(p95_settlement,        format = "f", digits = 2))
+        p90_settlement        = paste0("$", formatC(p90_settlement,        format = "f", digits = 2))
       ) |>
       select(contract, months_out, futures_price,
              settlement_volatility, p05_settlement,
-             p50_settlement, p95_settlement) |>
+             p50_settlement, p90_settlement) |>
       rename(
         "Contract"          = contract,
         "Months Out"        = months_out,
@@ -127,7 +127,7 @@ server <- function(input, output, session) {
         "Std. Deviation"    = settlement_volatility,
         "Best Case (p05)"   = p05_settlement,
         "Base Case (p50)"   = p50_settlement,
-        "Worst Case (p95)"  = p95_settlement
+        "Worst Case (p90)"  = p90_settlement
       )
   })
   
@@ -143,18 +143,18 @@ server <- function(input, output, session) {
       mutate(
         p05 = map_dbl(sim, ~ quantile(.x$forecast, 0.05)),
         p50 = map_dbl(sim, ~ quantile(.x$forecast, 0.50)),
-        p95 = map_dbl(sim, ~ quantile(.x$forecast, 0.95)),
+        p90 = map_dbl(sim, ~ quantile(.x$forecast, 0.90)),
         dens_at_p05 = map2_dbl(sim, p05, ~ approx(density(.x$forecast)$x,
                                                   density(.x$forecast)$y, .y)$y),
         dens_at_p50 = map2_dbl(sim, p50, ~ approx(density(.x$forecast)$x,
                                                   density(.x$forecast)$y, .y)$y),
-        dens_at_p95 = map2_dbl(sim, p95, ~ approx(density(.x$forecast)$x,
+        dens_at_p90 = map2_dbl(sim, p90, ~ approx(density(.x$forecast)$x,
                                                   density(.x$forecast)$y, .y)$y)
       ) |>
-      select(contract_label, p05, p50, p95,
-             dens_at_p05, dens_at_p50, dens_at_p95) |>
+      select(contract_label, p05, p50, p90,
+             dens_at_p05, dens_at_p50, dens_at_p90) |>
       pivot_longer(
-        cols      = c(p05, p50, p95),
+        cols      = c(p05, p50, p90),
         names_to  = "percentile",
         values_to = "price"
       ) |>
@@ -162,7 +162,7 @@ server <- function(input, output, session) {
         density_val = case_when(
           percentile == "p05" ~ dens_at_p05,
           percentile == "p50" ~ dens_at_p50,
-          percentile == "p95" ~ dens_at_p95
+          percentile == "p90" ~ dens_at_p90
         ),
         label_text = paste0("$", round(price, 1))
       )
@@ -187,10 +187,9 @@ server <- function(input, output, session) {
         vjust       = -0.3, size = 2.8, show.legend = FALSE,
         fill        = "white", linewidth = 0, alpha = 0.8
       ) +
-      scale_x_continuous(breaks = seq(x_min, x_max, by = 50)) +
       labs(
         title    = "Simulated Settlement Price Distributions",
-        subtitle = "Dashed lines indicate best (p05), base (p50), and worst (p95) case estimates",
+        subtitle = "Dashed lines indicate best (p05), base (p50), and worst (p90) case estimates",
         x        = "Simulated Settlement Price ($/MWh)",
         y        = "Density",
         fill     = NULL,
@@ -225,7 +224,7 @@ server <- function(input, output, session) {
                months_out = as.integer(months_out)) |>
         select(contract, months_out, futures_price,
                settlement_volatility, p05_settlement,
-               p50_settlement, p95_settlement) |>
+               p50_settlement, p90_settlement) |>
         rename(
           "Contract"         = contract,
           "Months Out"       = months_out,
@@ -233,7 +232,7 @@ server <- function(input, output, session) {
           "Std. Deviation"   = settlement_volatility,
           "Best Case (p05)"  = p05_settlement,
           "Base Case (p50)"  = p50_settlement,
-          "Worst Case (p95)" = p95_settlement
+          "Worst Case (p90)" = p90_settlement
         ) |>
         writexl::write_xlsx(file)
     }

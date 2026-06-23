@@ -33,11 +33,16 @@ forecast_prices <- function(
   
   var_hat <- predict(
     model_bundle$vol_model,
-    newdata = contract,
+    newdata = tibble(
+      delivery_month     = delivery_month,
+      months_out         = months_out,
+      futures_price      = pmin(futures_price, 100),
+      rolling_mean_error = rolling_mean_error
+    ),
     type = "response"
   )
   
-  sd_hat <- pmin(sqrt(var_hat), 60)
+  sd_hat <- sqrt(var_hat)
   
   inv_cdf <- switch(
     case_when(
@@ -80,6 +85,6 @@ summarize_forecast <- function(simulation_results) {
     p25_settlement        = quantile(simulations, 0.25),
     p50_settlement        = quantile(simulations, 0.50),
     p75_settlement        = quantile(simulations, 0.75),
-    p95_settlement        = quantile(simulations, 0.95)
+    p90_settlement        = quantile(simulations, 0.90)
   )
 }
