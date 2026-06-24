@@ -88,7 +88,7 @@ errors |>
 
 ## Methodology
 
-Forecasting price ranges poses several challenges. First, observations taken on consecutive days are highly autocorrelated. If the error is large and positive on May 15, the error is also likely to be large and positive on May 16. Rather than modeling the time series of the errors directly, this model takes a different approach, treating each observation as a draw from a distribution defined by its delivery month and time to expiration. This does not solve the autocorrelation problem since consecutive observations in the training data remain correlated. However, a rolling mean error adjustment partially addresses this issue by conditioning the mean error prediction on the average of the six most recent observed errors for each delivery month. These observations come from consecutive trading days, so the rolling mean captures the current bias level and uses that to adjust the predicted mean error. The model's goal is not to predict tomorrow's price distribution, but rather the full range of outcomes at settlement. This means that autocorrelation in the training data is less of a concern because the model is evaluated across many years of historical contracts rather than within one contract's lifetime.
+Forecasting price ranges poses several challenges. First, observations taken on consecutive days are highly autocorrelated. If the error is large and positive on May 15, the error is also likely to be large and positive on May 16. Rather than modeling the time series of the errors directly, this model takes a different approach, treating each observation as a draw from a distribution defined by its delivery month and time to expiration. This does not solve the autocorrelation problem since consecutive observations in the training data remain correlated. However, a rolling mean error adjustment partially addresses this issue by conditioning the mean error prediction on the average of the six most recent observed errors for each delivery month. These observations come from consecutive trading days, so the rolling mean captures the most recent bias level and uses that to adjust the predicted mean error. The model's goal is not to predict tomorrow's price distribution, but rather the full range of outcomes at settlement. This means that autocorrelation in the training data is less of a concern because the model is evaluated across many years of historical contracts rather than within one contract's lifetime.
 
 A second challenge is seasonal variation in price levels and forecast uncertainty. Winter months display much higher volatility than summer months, which is explained largely by the sensitivity of New England electricity prices to natural gas markets (which are volatile during the winter months due to cold weather). A model which assumes constant volatility/standard deviation in settled price for each month of the year would severely misrepresent the risk in several delivery months.
 
@@ -114,14 +114,14 @@ where:
 
 - $\bar{e}_{m,t}$ is the rolling mean of the six most recent observed errors for delivery month $m$ as of observation date $t$
 
-Taking $s(h)$ as opposed to using $h$ directly is driven by a nonlinear relationship between forecast error and time to maturity. For example, a January contract 1 month out is being priced in December, when weather forecasts are volatile and a cold snap can drive up natural gas demand rapidly. However, a January contract 12 months out has a much more "general winter" expectation and there is plenty of time for the market to adjust to conditions. After fitting various functions to the scatter plot of the relationship between horizon and error, the natural cubic spline with $df = 6$ was selected. Unlike linear, log, and square root transformations, which all assume a monotonically increasing relationship, the spline flexibility captures the wave-like pattern in the data. A sine function was considered due to this wave pattern, but it did not capture the asymmetry between peaks and troughs. The natural cubic spline makes no assumptions about the period or symmetry of the relationship, and instead the curve is shaped by the data itself.
+Taking $s(h)$ as opposed to using $h$ directly is driven by a nonlinear relationship between forecast error and time to maturity. With the natural cubic spline, the curve is shaped by the data itself.
 
 ```{r}
 errors |>
   group_by(months_out) |>
-  summarise(sd_error = sd(error), .groups = "drop") |>
+  summarise(mean_error = mean(error), .groups = "drop") |>
   filter(months_out <= 24) |>
-  ggplot(aes(x = months_out, y = sd_error)) +
+  ggplot(aes(x = months_out, y = mean_error)) +
   geom_point(color = "#2c3e50", size = 2) +
   geom_smooth(method = "lm", se = FALSE,
               aes(color = "Linear"), linetype = "dashed", linewidth = 0.7) +
@@ -131,19 +131,16 @@ errors |>
               aes(color = "Square Root"), linewidth = 0.7) +
   geom_smooth(method = "lm", formula = y ~ splines::ns(x, df = 6), se = FALSE,
               aes(color = "Spline (df=6)"), linewidth = 0.7) +
-  geom_smooth(method = "lm", formula = y ~ sin(2 * pi * x / 12) + x, se = FALSE,
-              aes(color = "Sine"), linewidth = 0.7) +
   scale_color_manual(values = c(
     "Linear"        = "#e74c3c",
     "Log"           = "#27ae60",
     "Square Root"   = "#e67e22",
-    "Spline (df=6)" = "#8e44ad",
-    "Sine"          = "#2980b9"
+    "Spline (df=6)" = "#8e44ad"
   )) +
   labs(
-    title = "Forecast Error Volatility by Time to Maturity",
+    title = "Mean Forecast Error by Time to Maturity",
     x     = "Months to Expiry",
-    y     = "Std. Dev. of Error ($/MWh)",
+    y     = "Mean Error ($/MWh)",
     color = NULL
   ) +
   theme_minimal(base_family = "Georgia") +
@@ -196,6 +193,47 @@ model_data |>
 
 <br> Therefore a Gamma GLM is applied to model the conditional variance of the errors rather than a linear model. While a linear model assumes the response variable is normally distributed, a Gamma GLM assumes a Gamma distribution. Unlike the error model, futures price is included as a predictor. This reflects the observation that forecast uncertainty scales with a contract's price level. For instance, a January futures contract priced at \$150 carries far more volatility than a January contract priced at \$97, even if they have the same time to expiration. However, this relationship becomes very unstable at very high futures price levels, where training data from the 2022-2023 energy crisis creates unreliability. To prevent the volatility model from extrapolating into this regime, the futures input into the volatility model is capped at \$70. While this cap is placed on the variance estimate, it is not applied to the actual futures price.
 
+Similar to the error model, a natural cubic spline was used, driven by a nonlinear relationship between months to expiration and the standard deviation of residuals. A January contract 1 month out is being priced in December, when weather forecasts are volatile and a cold snap can drive up natural gas demand rapidly. However, a January contract 12 months out has a much more "general winter" expectation and there is plenty of time for the market to adjust to conditions. After fitting various functions to the scatter plot of the relationship between horizon and error, the natural cubic spline with $df = 6$ was selected. The spline flexibility captures the wave-like pattern in the data. A sine function was considered due to this wave pattern, but it did not capture the asymmetry between peaks and troughs. The natural cubic spline makes no assumptions about the period or symmetry of the relationship.
+
+```{r}
+model_data |>
+  group_by(months_out) |>
+  summarise(sd_residual = sd(residual), .groups = "drop") |>
+  filter(months_out <= 24) |>
+  ggplot(aes(x = months_out, y = sd_residual)) +
+  geom_point(color = "#2c3e50", size = 2) +
+  geom_smooth(method = "lm", se = FALSE,
+              aes(color = "Linear"), linetype = "dashed", linewidth = 0.7) +
+  geom_smooth(method = "lm", formula = y ~ log(x), se = FALSE,
+              aes(color = "Log"), linewidth = 0.7) +
+  geom_smooth(method = "lm", formula = y ~ sqrt(x), se = FALSE,
+              aes(color = "Square Root"), linewidth = 0.7) +
+  geom_smooth(method = "lm", formula = y ~ splines::ns(x, df = 6), se = FALSE,
+              aes(color = "Spline (df=6)"), linewidth = 0.7) +
+  geom_smooth(method = "lm", formula = y ~ sin(2 * pi * x / 12) + x, se = FALSE,
+              aes(color = "Sine"), linewidth = 0.7) +
+  scale_color_manual(values = c(
+    "Linear"        = "#e74c3c",
+    "Log"           = "#27ae60",
+    "Square Root"   = "#e67e22",
+    "Spline (df=6)" = "#8e44ad",
+    "Sine"          = "#2980b9"
+  )) +
+  labs(
+    title = "Residual Volatility by Time to Maturity",
+    x     = "Months to Expiry",
+    y     = "Std. Dev. of Residuals ($/MWh)",
+    color = NULL
+  ) +
+  theme_minimal(base_family = "Georgia") +
+  theme(
+    plot.title       = element_text(size = 13, face = "bold"),
+    axis.title       = element_text(size = 10),
+    panel.grid.minor = element_blank(),
+    legend.position  = "bottom"
+  )
+```
+
 3.  A predictive distribution of standardized residuals, based on the conditional mean $\hat{\mu}_{m,h}$ , conditional variance $\hat{\sigma}^2_{m,h,f}$, and each observed residual $e_i$
 
     $$z_i = \frac{e_i - \hat{\mu}_{m, h}}{\hat{\sigma}_{m,h,f}}$$
@@ -210,7 +248,7 @@ where:
 
 - $\hat{\sigma}_{m,h,f}$ is the fitted standard deviation from the volatility model
 
-  After adjusting for the conditional mean and scaling by the conditional standard deviation, the residuals should be distributed consistently regardless of the specific month or season. If the standardized residuals were centered well above or below 0 for a particular season, the error model would be systematically over-or undepredicting errors for that group. If the spread were drastically wider or narrower for a particular season, then the volatility model would not be capturing the difference in uncertainty across months.
+  If the standardized residuals were centered well above or below 0 for a particular season, the error model would be systematically over-or under-predicting errors for that group. If the spread were drastically wider or narrower for a particular season, then the volatility model would not be capturing the difference in uncertainty across months.
 
 ```{r}
 model_bundle$errors_rolling |>
@@ -319,11 +357,11 @@ model_bundle$errors_rolling |>
   ))) |>
   knitr::kable(
     col.names = c("Horizon", "Mean Coverage", "Narrow Intervals"),
-    caption   = "Model Calibration by Forecast Horizon (Target: 90%)"
+    caption   = "Model Calibration by Forecast Horizon (Target: 85%)"
   )
 ```
 
-Based on the table, all horizon groups seem to have roughly 94-97% coverage, which is encouraging and well above the expected coverage. The only exception is very long horizons with a mean coverage of 0.818, which makes sense given the distance to settlement and uncertainty surrounding those contracts. The narrow interval percentage for short, medium, and long horizons ranges from 0-4.2%. This figure is strong, and it means that the model is effectively capturing the ranges of outcomes for horizons 2 years or less. It is obvious that model performance deteriorates for very long horizons, but given the time to settlement, the performance is still positive.
+Based on the table, all horizon groups seem to have roughly 94-97% coverage, which is encouraging and well above the expected coverage. The only exception is very long horizons with a mean coverage of 0.817, which makes sense given the distance to settlement and uncertainty surrounding those contracts. The narrow interval percentage for short, medium, and long horizons ranges from 0-4.2%. This figure is strong, and it means that the model is effectively capturing the ranges of outcomes for horizons 2 years or less. It is obvious that model performance deteriorates for very long horizons, but given the time to settlement, the performance is still positive.
 
 **Bias**
 
@@ -446,7 +484,7 @@ bind_rows(
   )
 ```
 
-The out-of-sample coverage across all 12 months is extremely strong, with 9 of 12 months at or above 95% coverage. January is the most notable result at 78.1% coverage, but the overall out-of sample coverage is 95.6%, providing evidence that the model can generalize well to recent market conditions.
+The out-of-sample coverage across all 12 months is extremely strong, with 9 of 12 months at or above 95% coverage. January is the most notable result at 78.1% coverage, but the overall out-of sample coverage is 95.5%, providing evidence that the model can generalize well to recent market conditions.
 
 ## Results
 
@@ -545,7 +583,9 @@ summary_table |>
 
 2.  *Limitations*
 
-- The model is trained on data that includes the 2021/2022 winter spike and post-COVID price volatility, which may distort estimates -The rolling mean adjustment is capped at +/- 20 to prevent the model from overcorrecting during periods of extreme market dislocation, and the volatility model futures price input is capped at \$70 to prevent extrapolation at high futures price levels
+- The model is trained on data that includes the 2021/2022 winter spike and post-COVID price volatility, which may distort estimates 
+
+-The rolling mean adjustment is capped at +/- 20 to prevent the model from overcorrecting during periods of extreme market dislocation, and the volatility model futures price input is capped at \$100 to prevent extrapolation at high futures price levels
 
 - No external factors, such as storage levels, gas basis, or weather forecasts are included in the model, limiting its ability to condition on market fundamentals
 

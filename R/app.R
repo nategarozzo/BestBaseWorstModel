@@ -204,7 +204,7 @@ server <- function(input, output, session) {
       ) +
       coord_cartesian(xlim = c(x_clip_min, x_clip_max)) +
       scale_x_continuous(breaks = seq(floor(x_clip_min / 10) * 10, 
-                                      ceiling(x_clip_max / 10) * 10, by = 50))
+                                      ceiling(x_clip_max / 10) * 10, by = 20))
   }
   
   output$dist_plot <- renderPlot({

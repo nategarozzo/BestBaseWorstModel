@@ -20,15 +20,15 @@ The app takes in an ICE daily futures report and outputs both a table and visual
 
 After uploading and hitting "Run Forecast", a table detailing the price distributions for each contract appears:
 
-![](images/clipboard-2263830655.png){width="999"}
+![](images/clipboard-2548628784.png)
 
 Users may also inspect the distributions visually:
 
-![](images/isone_distribution_2026-06-15%20(4).png){width="961"}
+![](images/clipboard-2186180976.png){width="685" height="347"}
 
 If you would like to download either the table as an excel sheet or an image of the distribution, you can do so by clicking near the bottom of the page:
 
-![](images/clipboard-3690506140.png)
+![](images/clipboard-3690506140.png){width="688" height="92"}
 
 **Note: App forecasts are capped at 30 months (2.5 years) out, due to lack of forecasting reliability past this point.**
 
@@ -36,7 +36,7 @@ If you would like to download either the table as an excel sheet or an image of 
 
 Below is a summary of the structure of this repository. All coding components (including the app) live in `/R`, all data (raw and cleaned) lives in `/data`, and the write-up .qmd/.html live in `/writeup`.
 
-![](images/clipboard-1582763670.png)
+![](images/clipboard-488516056.png)
 
 ## Data
 
