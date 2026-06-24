@@ -389,68 +389,175 @@ model_bundle$errors_rolling |>
 
 <br>None of the months have a T-statistic above 2 or below -2, so the model passes the bias check.
 
-**Out-of-sample performance**
+**Baseline comparison**
 
-In order to evaluate how well the model generalizes beyond the training data, it was also tested on a set of 2,466 held-out observations from 2025 futures contracts that settled in 2025 and 2026. January through May use the 2026 actual settled prices for those months, while June through December use 2025 settlements since those months have not yet settled. Essentially the goal is to simulate an out-of-sample test. Given that 2026 data only accounts for 1.1% of the training set, it has a minor influence on model parameters.
+To justify the model's complexity, it was benchmarked against 3 simple baselines:
+
+- Baseline A - Futures Price + Historical Quantiles
+
+  - This applies the historical 5th and 90th percentile of forecast errors directly to the current futures price, without accounting for any other factors. It is the simplest baseline, asking whether the model beats using the futures price and a fixed historical error band.
+
+- Baseline B - Month $\times$ Horizon Bucket Lookup
+
+  - This computes the 5th, 50th, and 90th percentile of historical forecast errors for each combination of delivery month and horizon bucket (0-3, 4-6, 7-12, 13-24, and 25+ months out) and applies them directly to the current futures price. This captures the two most obvious sources of structure in the data (seasonality and time to expiration) without any additional model complexity.
+
+- Baseline C - Full Mean Model + Fixed Seasonal Residual Quantiles
+
+  - This uses the full mean error model but replaces the Gamma GLM volatility model. After subtracting the mean model prediction from each historical error, the 5th and 90th percentiles of the residuals are calculated separately for each season and then applied to the base case. Every contract within a season receives the same interval width regardless of horizon or futures price level. This directly evaluates whether the Gamma GLM's contract-specific variance predictions add measurable value.
 
 ```{r}
-bind_rows(
-  model_bundle$errors_rolling |>
+# ============================================================
+# Baseline comparison
+# ============================================================
+pinball <- function(y, q, tau) {
+  mean(ifelse(y >= q, tau * (y - q), (1 - tau) * (q - y)))
+}
+
+errors_with_rolling <- errors |>
+  arrange(delivery_month, current_year, current_month_num) |>
+  group_by(delivery_month) |>
+  mutate(
+    rolling_mean_error = lag(
+      zoo::rollmean(error, k = 6, fill = NA, align = "right")
+    )
+  ) |>
+  ungroup() |>
+  filter(!is.na(rolling_mean_error)) |>
+  mutate(rolling_mean_error = pmin(pmax(rolling_mean_error, -20), 20))
+
+test_set <- bind_rows(
+  errors_with_rolling |>
     filter(current_year == 2025, delivery_year == 2026,
            delivery_month %in% c("Jan", "Feb", "Mar", "Apr", "May")),
-  model_bundle$errors_rolling |>
+  errors_with_rolling |>
     filter(current_year == 2025, delivery_year == 2025,
-           delivery_month %in% c("Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
-) |>
-  select(-rolling_mean_error) |>
-  left_join(model_bundle$current_rolling_means, by = "delivery_month") |>
-  mutate(
-    season = case_when(
-      delivery_month %in% c("Dec", "Jan", "Feb") ~ "winter",
-      delivery_month %in% c("Jun", "Jul", "Aug") ~ "summer",
-      TRUE                                        ~ "shoulder"
-    ),
-    mu_hat = predict(model_bundle$error_model, newdata = pick(everything())),
-    sd_hat = sqrt(predict(model_bundle$vol_model,
-                      newdata = pick(everything()) |>
-                        mutate(futures_price = pmin(futures_price, 100)),
-                      type = "response")),
-    p05 = futures_price + mu_hat + sd_hat * case_when(
-      season == "winter"   ~ model_bundle$seasonal_quantiles$q05_winter,
-      season == "summer"   ~ model_bundle$seasonal_quantiles$q05_summer,
-      season == "shoulder" ~ model_bundle$seasonal_quantiles$q05_shoulder
-    ),
-    p90 = futures_price + mu_hat + sd_hat * case_when(
-      season == "winter"   ~ model_bundle$seasonal_quantiles$q90_winter,
-      season == "summer"   ~ model_bundle$seasonal_quantiles$q90_summer,
-      season == "shoulder" ~ model_bundle$seasonal_quantiles$q90_shoulder
-    ),
-    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p90
-  ) |>
+           delivery_month %in% c("Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")),
+  errors_with_rolling |>
+    filter(current_year == 2024, delivery_year == 2025),
+  errors_with_rolling |>
+    filter(current_year == 2024, delivery_year == 2026,
+           delivery_month %in% c("Jan", "Feb", "Mar", "Apr", "May"))
+)
+
+train_set <- errors |>
+  anti_join(test_set |>
+              distinct(delivery_month, delivery_year, current_year),
+            by = c("delivery_month", "delivery_year", "current_year"))
+
+# Baseline A
+baseline_a_stats <- train_set |>
   group_by(delivery_month) |>
   summarise(
-    n        = n(),
-    coverage = round(mean(covered), 3),
-    .groups  = "drop"
-  ) |>
-  arrange(factor(delivery_month, levels = month.abb)) |>
-  knitr::kable(
-    col.names = c("Delivery Month", "N", "Coverage"),
-    caption   = "Out-of-Sample Coverage by Delivery Month (2025 Observations, 2025/2026 Settlements)"
+    a_p05 = quantile(error, 0.05),
+    a_p50 = quantile(error, 0.50),
+    a_p90 = quantile(error, 0.90),
+    .groups = "drop"
   )
-```
 
-```{r}
-bind_rows(
-  model_bundle$errors_rolling |>
-    filter(current_year == 2025, delivery_year == 2026,
-           delivery_month %in% c("Jan", "Feb", "Mar", "Apr", "May")),
-  model_bundle$errors_rolling |>
-    filter(current_year == 2025, delivery_year == 2025,
-           delivery_month %in% c("Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))
-) |>
-  select(-rolling_mean_error) |>
-  left_join(model_bundle$current_rolling_means, by = "delivery_month") |>
+baseline_a <- test_set |>
+  left_join(baseline_a_stats, by = "delivery_month") |>
+  mutate(
+    p05     = futures_price + a_p05,
+    p50     = futures_price + a_p50,
+    p90     = futures_price + a_p90,
+    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p90,
+    width   = p90 - p05,
+    model   = "A: Futures + Historical Quantiles"
+  )
+
+# Baseline B
+train_set_bucketed <- train_set |>
+  mutate(horizon_bucket = case_when(
+    months_out <= 3  ~ "0-3",
+    months_out <= 6  ~ "4-6",
+    months_out <= 12 ~ "7-12",
+    months_out <= 24 ~ "13-24",
+    TRUE             ~ "25+"
+  ))
+
+baseline_b_stats <- train_set_bucketed |>
+  group_by(delivery_month, horizon_bucket) |>
+  summarise(mean_error = mean(error), .groups = "drop")
+
+baseline_b_resid <- train_set_bucketed |>
+  left_join(baseline_b_stats, by = c("delivery_month", "horizon_bucket")) |>
+  mutate(resid = error - mean_error) |>
+  group_by(delivery_month, horizon_bucket) |>
+  summarise(
+    b_p05_resid = quantile(resid, 0.05),
+    b_p50_resid = quantile(resid, 0.50),
+    b_p90_resid = quantile(resid, 0.90),
+    .groups     = "drop"
+  )
+
+baseline_b_full <- baseline_b_stats |>
+  left_join(baseline_b_resid, by = c("delivery_month", "horizon_bucket"))
+
+baseline_b <- test_set |>
+  mutate(horizon_bucket = case_when(
+    months_out <= 3  ~ "0-3",
+    months_out <= 6  ~ "4-6",
+    months_out <= 12 ~ "7-12",
+    months_out <= 24 ~ "13-24",
+    TRUE             ~ "25+"
+  )) |>
+  left_join(baseline_b_full, by = c("delivery_month", "horizon_bucket")) |>
+  mutate(
+    p05     = futures_price + mean_error + b_p05_resid,
+    p50     = futures_price + mean_error + b_p50_resid,
+    p90     = futures_price + mean_error + b_p90_resid,
+    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p90,
+    width   = p90 - p05,
+    model   = "B: Month x Horizon Bucket"
+  )
+
+# Baseline C
+train_rolling <- errors_with_rolling |>
+  anti_join(test_set |>
+              distinct(delivery_month, delivery_year, current_year),
+            by = c("delivery_month", "delivery_year", "current_year"))
+
+train_resids_c <- train_rolling |>
+  mutate(
+    mu_hat = predict(model_bundle$error_model, newdata = pick(everything())),
+    resid  = error - mu_hat,
+    season = case_when(
+      delivery_month %in% c("Dec", "Jan", "Feb") ~ "winter",
+      delivery_month %in% c("Jun", "Jul", "Aug") ~ "summer",
+      TRUE                                        ~ "shoulder"
+    )
+  )
+
+baseline_c_stats <- train_resids_c |>
+  group_by(season) |>
+  summarise(
+    c_p05 = quantile(resid, 0.05),
+    c_p50 = quantile(resid, 0.50),
+    c_p90 = quantile(resid, 0.90),
+    .groups = "drop"
+  )
+
+baseline_c <- test_set |>
+  mutate(
+    season = case_when(
+      delivery_month %in% c("Dec", "Jan", "Feb") ~ "winter",
+      delivery_month %in% c("Jun", "Jul", "Aug") ~ "summer",
+      TRUE                                        ~ "shoulder"
+    ),
+    mu_hat = predict(model_bundle$error_model, newdata = pick(everything()))
+  ) |>
+  left_join(baseline_c_stats, by = "season") |>
+  mutate(
+    p05     = futures_price + mu_hat + c_p05,
+    p50     = futures_price + mu_hat + c_p50,
+    p90     = futures_price + mu_hat + c_p90,
+    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p90,
+    width   = p90 - p05,
+    model   = "C: Mean Model + Empirical Residuals"
+  )
+
+# Full model
+full_model <- test_set |>
   mutate(
     season = case_when(
       delivery_month %in% c("Dec", "Jan", "Feb") ~ "winter",
@@ -459,32 +566,51 @@ bind_rows(
     ),
     mu_hat = predict(model_bundle$error_model, newdata = pick(everything())),
     sd_hat = sqrt(predict(model_bundle$vol_model,
-                           newdata = pick(everything()) |>
-                             mutate(futures_price = pmin(futures_price, 100)),
-                           type = "response")),
+                          newdata = pick(everything()) |>
+                            mutate(futures_price = pmin(futures_price, 100)),
+                          type = "response")),
     p05 = futures_price + mu_hat + sd_hat * case_when(
       season == "winter"   ~ model_bundle$seasonal_quantiles$q05_winter,
       season == "summer"   ~ model_bundle$seasonal_quantiles$q05_summer,
       season == "shoulder" ~ model_bundle$seasonal_quantiles$q05_shoulder
     ),
+    p50 = futures_price + mu_hat,
     p90 = futures_price + mu_hat + sd_hat * case_when(
       season == "winter"   ~ model_bundle$seasonal_quantiles$q90_winter,
       season == "summer"   ~ model_bundle$seasonal_quantiles$q90_summer,
       season == "shoulder" ~ model_bundle$seasonal_quantiles$q90_shoulder
     ),
-    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p90
-  ) |>
+    covered = settled_avg_da_lmp >= p05 & settled_avg_da_lmp <= p90,
+    width   = p90 - p05,
+    model   = "Full Model"
+  )
+
+# Summary table
+bind_rows(full_model, baseline_a, baseline_b, baseline_c) |>
+  group_by(model) |>
   summarise(
-    n        = n(),
-    coverage = round(mean(covered), 3)
+    Coverage      = round(mean(covered), 3),
+    `Mean Width`  = round(mean(width), 1),
+    MAE           = round(mean(abs(settled_avg_da_lmp - p50)), 2),
+    Bias          = round(mean(settled_avg_da_lmp - p50), 2),
+    `Pinball p05` = round(pinball(settled_avg_da_lmp, p05, 0.05), 2),
+    `Pinball p50` = round(pinball(settled_avg_da_lmp, p50, 0.50), 2),
+    `Pinball p90` = round(pinball(settled_avg_da_lmp, p90, 0.90), 2),
+    .groups       = "drop"
   ) |>
+  arrange(desc(Coverage)) |>
+  arrange(factor(model, levels = c(
+    "A: Futures + Historical Quantiles",
+    "B: Month x Horizon Bucket",
+    "C: Mean Model + Empirical Residuals",
+    "Full Model"
+))) |>
   knitr::kable(
-    col.names = c("N", "Overall Coverage"),
-    caption   = "Overall Out-of-Sample Coverage"
+    caption = "Model vs Baseline Comparison — Out-of-Sample Performance"
   )
 ```
 
-The out-of-sample coverage across all 12 months is extremely strong, with 9 of 12 months at or above 95% coverage. January is the most notable result at 78.1% coverage, but the overall out-of sample coverage is 95.5%, providing evidence that the model can generalize well to recent market conditions.
+The full model outperforms all three baselines across every metric. Coverage of 96.5% is 31 percentage points higher than the next best baseline, despite having the most narrow mean interval width. The MAE is \$1.82/MWh lower than the next closest figure, and pinball loss at all three quantiles is lower than every baseline. Baseline B's coverage of 0.211 demontstrates the importance of the rolling mean adjustment and Gamma GLM. Baseline C's coverage of 0.655 also essentially validates the decision to use the Gamma GLM. Empirical residual quantiles alone do not scale uncertainty appropriately across delivery month, horizon, and futures price levels.
 
 ## Results
 
@@ -583,14 +709,10 @@ summary_table |>
 
 2.  *Limitations*
 
-- The model is trained on data that includes the 2021/2022 winter spike and post-COVID price volatility, which may distort estimates 
-
--The rolling mean adjustment is capped at +/- 20 to prevent the model from overcorrecting during periods of extreme market dislocation, and the volatility model futures price input is capped at \$100 to prevent extrapolation at high futures price levels
-
+- The model is trained on data that includes the 2021/2022 winter spike and post-COVID price volatility, which may distort estimates
+- The rolling mean adjustment is capped at +/- 20 to prevent the model from overcorrecting during periods of extreme market dislocation, and the volatility model futures price input is capped at \$100 to prevent extrapolation at high futures price levels
 - No external factors, such as storage levels, gas basis, or weather forecasts are included in the model, limiting its ability to condition on market fundamentals
-
 - The model does not forecast where futures prices will move, only where they will land
-
 - Data points on consecutive days are highly autocorrelated
 
 3.  *Future work*
