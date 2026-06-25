@@ -42,7 +42,7 @@ p code, li code {
 
 ## Introduction
 
-Consumers use ISONE DA-LMP (ISO-New England Day-Ahead locational marginal pricing) futures to hedge forward electricity expenses. However, the individual futures contract price on any given day provides no extra information about the distribution of expected outcomes for the settled price of the contract. Trained on historical daily futures and settlement data from 2022-2026, this model produces a predictive distribution for a base case (50th percentile), best case (5th percentile) and worst case (90th percentile) settled price outcome for consumers, given a particular day's futures contract price, settlement month, and time to settlement (horizon). Linear regression is used to estimate the conditional mean forecast error (\$/MWh), and a Gamma GLM is used to estimate the conditional variance (\$/MWh). Finally, a Monte Carlo simulation is layered in to produce the distribution of expected outcomes. The goal for this model is to provide energy consumers in the ISONE territory with a better understanding of their forecasted expenses and whether or not they should be hedging their energy consumption.
+Consumers use ISONE DA-LMP (ISO-New England Day-Ahead locational marginal pricing) futures to hedge forward electricity expenses. However, the individual futures contract price on any given day provides no extra information about the distribution of expected outcomes for the settled price of the contract. Trained on historical daily futures and settlement data from 2022-2026, this model produces a predictive distribution for a base case (50th percentile), best case (5th percentile) and worst case (90th percentile) settled price outcome for consumers, given a particular day's futures contract price, settlement month, and time to settlement (horizon). Linear regression is used to estimate the conditional mean forecast error (\$/MWh), and a Gamma GLM is used to estimate the conditional variance. Finally, a Monte Carlo simulation is layered in to produce the distribution of expected outcomes. The goal for this model is to provide energy consumers in the ISONE territory with a better understanding of their forecasted expenses and whether or not they should be hedging their energy consumption.
 
 ## Data
 
@@ -88,7 +88,7 @@ errors |>
 
 ## Methodology
 
-Forecasting price ranges poses several challenges. First, observations taken on consecutive days are highly autocorrelated. If the error is large and positive on May 15, the error is also likely to be large and positive on May 16. Rather than modeling the time series of the errors directly, this model takes a different approach, treating each observation as a draw from a distribution defined by its delivery month and time to expiration. This does not solve the autocorrelation problem since consecutive observations in the training data remain correlated. However, a rolling mean error adjustment partially addresses this issue by conditioning the mean error prediction on the average of the six most recent observed errors for each delivery month. These observations come from consecutive trading days, so the rolling mean captures the most recent bias level and uses that to adjust the predicted mean error. The model's goal is not to predict tomorrow's price distribution, but rather the full range of outcomes at settlement. This means that autocorrelation in the training data is less of a concern because the model is evaluated across many years of historical contracts rather than within one contract's lifetime.
+Forecasting price ranges poses several challenges. First, observations taken on consecutive days are highly autocorrelated. If the error is large and positive on May 15, the error is also likely to be large and positive on May 16. Rather than modeling the time series of the errors directly, this model takes a different approach, treating each observation as a draw from a distribution defined by its delivery month and time to expiration. This does not solve the autocorrelation problem since consecutive observations in the training data remain correlated. However, a rolling mean error adjustment partially addresses this issue by conditioning the mean error prediction on the average of the six most recent observed errors for each delivery month. These observations come from consecutive trading days, so the rolling mean captures the most recent bias level for that month (rather than six independent data points) and uses it to adjust the predicted mean error.
 
 A second challenge is seasonal variation in price levels and forecast uncertainty. Winter months display much higher volatility than summer months, which is explained largely by the sensitivity of New England electricity prices to natural gas markets (which are volatile during the winter months due to cold weather). A model which assumes constant volatility/standard deviation in settled price for each month of the year would severely misrepresent the risk in several delivery months.
 
@@ -303,6 +303,8 @@ $$\tilde{S} = f + \hat{\mu}_{m,h} + \hat{\sigma}_{m,h,f} \cdot z$$ where:
 - $\hat{\mu}_{m,h}$ is the predicted mean error from the error model
 - $\hat{\sigma}_{m,h,f}$ is the predicted standard deviation from the volatility model
 - $z$ is a draw from the seasonal empirical inverse CDF
+
+Note that the error model is fitted twice for numerical stability. The base error model is fitted first, and its residuals are used to train the volatility model. Including the rolling mean at this stage explains enough additional variance that some of the residuals become near-zero, causing GLM's fitting algorithm to destabilize. The rolling mean is added to the error in a second pass, replacing the base error model and leaving the other model components untouched. It is important to highlight that this creates a minor inconsistency, where the volatility was calibrated on base residuals that are slightly larger than the rolling mean model residuals. In practice, this results in wider prediction intervals, which is an acceptable outcome for a consumer risk tool.
 
 ## Diagnostics
 
@@ -606,11 +608,11 @@ bind_rows(full_model, baseline_a, baseline_b, baseline_c) |>
     "Full Model"
 ))) |>
   knitr::kable(
-    caption = "Model vs Baseline Comparison — Out-of-Sample Performance"
+    caption = "Model vs Baseline Comparison — Recent Period Performance (2024-2026)"
   )
 ```
 
-The full model outperforms all three baselines across every metric. Coverage of 96.5% is 31 percentage points higher than the next best baseline, despite having the most narrow mean interval width. The MAE is \$1.82/MWh lower than the next closest figure, and pinball loss at all three quantiles is lower than every baseline. Baseline B's coverage of 0.211 demontstrates the importance of the rolling mean adjustment and Gamma GLM. Baseline C's coverage of 0.655 also essentially validates the decision to use the Gamma GLM. Empirical residual quantiles alone do not scale uncertainty appropriately across delivery month, horizon, and futures price levels.
+The full model outperforms all three baselines across every metric when tested on data from 2024-2026. Coverage of 96.5% is 31 percentage points higher than the next best baseline, despite having the most narrow mean interval width. The MAE is \$1.82/MWh lower than the next closest figure, and pinball loss at all three quantiles is lower than every baseline. Baseline B's coverage of 0.211 demontstrates the importance of the rolling mean adjustment. Without the adjustment, 2022-2023 historical error quantiles are applied to the lookup table. January 2023 futures were \$294 and settled at \$49, so that -\$245 errror gets averaged into the January bucket, distorting all predictions. The rolling mean adjustement anchors predictions to recent market conditions. Baseline C's coverage of 0.655 supports the decision to use the Gamma GLM. Empirical residual quantiles alone do not scale uncertainty appropriately across delivery month, horizon, and futures price levels.
 
 ## Results
 
@@ -623,7 +625,7 @@ library(patchwork)
 contracts <- tibble(
   delivery_month = c("Jan", "Jul", "Jan"),
   months_out     = c(3, 3, 24),
-  futures_price  = c(80, 35, 85),
+  futures_price  = c(100, 48, 115),
   label          = c("Jan 3mo", "Jul 3mo", "Jan 24mo")
 )
 
@@ -646,6 +648,16 @@ sim_draws <- sims |>
   select(label, draws) |>
   unnest(draws)
 
+# Compute p05 and p90 for each contract
+quantile_lines <- sims |>
+  mutate(
+    p05 = map_dbl(sim, ~ quantile(.x$forecast, 0.05)),
+    p90 = map_dbl(sim, ~ quantile(.x$forecast, 0.90))
+  ) |>
+  select(label, p05, p90) |>
+  pivot_longer(cols = c(p05, p90), names_to = "quantile", values_to = "price") |>
+  mutate(label = factor(label, levels = c("Jan 3mo", "Jul 3mo", "Jan 24mo")))
+
 # Summary table
 summary_table <- sims |>
   mutate(summary = map(sim, summarize_forecast)) |>
@@ -656,19 +668,31 @@ summary_table <- sims |>
          settlement_volatility, p05_settlement,
          p50_settlement, p90_settlement)
 
+# Color mapping
+contract_colors <- c(
+  "Jan 3mo"  = "#2980b9",
+  "Jul 3mo"  = "#27ae60",
+  "Jan 24mo" = "#8e44ad"
+)
+
 # Distribution plot
 p_dist <- sim_draws |>
   mutate(label = factor(label, levels = c("Jan 3mo", "Jul 3mo", "Jan 24mo"))) |>
-  ggplot(aes(x = price, fill = label)) +
-  geom_density(alpha = 0.5, color = NA) +
-  scale_fill_manual(values = c(
-    "Jan 3mo"  = "#2980b9",
-    "Jul 3mo"  = "#27ae60",
-    "Jan 24mo" = "#8e44ad"
-  )) +
+  ggplot(aes(x = price, fill = label, color = label)) +
+  geom_density(alpha = 0.4, linewidth = 0.5) +
+  geom_vline(
+    data      = quantile_lines,
+    aes(xintercept = price, color = label),
+    linetype  = "dashed",
+    linewidth = 0.6,
+    show.legend = FALSE
+  ) +
+  scale_fill_manual(values  = contract_colors) +
+  scale_color_manual(values = contract_colors) +
+  guides(color = "none") +
   labs(
     title    = "Simulated Settlement Price Distributions",
-    subtitle = "Winter contracts exhibit wider distributions than summer",
+    subtitle = "Dashed lines indicate best (p05) and worst (p90) case estimates",
     x        = "Simulated Settlement Price ($/MWh)",
     y        = "Density",
     fill     = NULL
