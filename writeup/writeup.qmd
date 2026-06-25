@@ -733,7 +733,7 @@ summary_table |>
 
 2.  *Limitations*
 
-- The model is trained on data that includes the 2021/2022 winter spike and post-COVID price volatility, which may distort estimates
+- The model is trained on data that includes the 2022/2023 winter spike and post-COVID price volatility, which may distort estimates
 - The rolling mean adjustment is capped at +/- 20 to prevent the model from overcorrecting during periods of extreme market dislocation, and the volatility model futures price input is capped at \$100 to prevent extrapolation at high futures price levels
 - No external factors, such as storage levels, gas basis, or weather forecasts are included in the model, limiting its ability to condition on market fundamentals
 - The model does not forecast where futures prices will move, only where they will land
