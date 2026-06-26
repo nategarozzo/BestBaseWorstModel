@@ -42,7 +42,7 @@ p code, li code {
 
 ## Introduction
 
-Consumers use ISONE DA-LMP (ISO-New England Day-Ahead locational marginal pricing) futures to hedge forward electricity expenses. However, the individual futures contract price on any given day provides no extra information about the distribution of expected outcomes for the settled price of the contract. Trained on historical daily futures and settlement data from 2022-2026, this model produces a predictive distribution for a base case (50th percentile), best case (5th percentile) and worst case (90th percentile) settled price outcome for consumers, given a particular day's futures contract price, settlement month, and time to settlement (horizon). Linear regression is used to estimate the conditional mean forecast error (\$/MWh), and a Gamma GLM is used to estimate the conditional variance. Finally, a Monte Carlo simulation is layered in to produce the distribution of expected outcomes. The goal for this model is to provide energy consumers in the ISONE territory with a better understanding of their forecasted expenses and whether or not they should be hedging their energy consumption.
+Consumers use ISONE DA LMP (ISO-New England Day-Ahead locational marginal pricing) futures to hedge forward electricity expenses. However, the individual futures contract price on any given day provides no extra information about the distribution of expected outcomes for the settled price of the contract. Trained on historical daily futures and settlement data from 2022-2026, this model produces a predictive distribution for a base case (50th percentile), best case (5th percentile) and worst case (90th percentile) settled price outcome for consumers, given a particular day's futures contract price, settlement month, and time to settlement (horizon). Linear regression is used to estimate the conditional mean forecast error (\$/MWh), and a Gamma GLM is used to estimate the conditional variance. Finally, a Monte Carlo simulation is layered in to produce the distribution of expected outcomes. The goal for this model is to provide energy consumers in the ISONE territory with a better understanding of their forecasted expenses and whether or not they should be hedging their energy consumption.
 
 ## Data
 
@@ -390,6 +390,36 @@ model_bundle$errors_rolling |>
 ```
 
 <br>None of the months have a T-statistic above 2 or below -2, so the model passes the bias check.
+
+**Point Forecast Accuracy**
+
+The final way to evaluate model performance is to examine whether or not the base case prediction is actually better than the futures price alone as a point forecast for a given contract. A model "win" occurs when the base case lands closer to the settlement than the futures price. This diagnostic directly tests whether the error model's mean adjustment adds value.
+
+```{r}
+model_bundle$errors_rolling |>
+  mutate(
+    mu_hat = predict(model_bundle$error_model, newdata = pick(everything())),
+    model_error   = abs(settled_avg_da_lmp - (futures_price + mu_hat)),
+    futures_error = abs(settled_avg_da_lmp - futures_price),
+    model_better  = model_error < futures_error
+  ) |>
+  group_by(delivery_month) |>
+  summarise(
+    n                = n(),
+    `Model MAE`      = round(mean(model_error), 2),
+    `Futures MAE`    = round(mean(futures_error), 2),
+    `Model Beats Futures` = scales::percent(mean(model_better), accuracy = 0.1),
+    .groups          = "drop"
+  ) |>
+  arrange(factor(delivery_month, levels = month.abb)) |>
+  knitr::kable(
+    col.names = c("Month", "N", "Model MAE", 
+                  "Futures MAE", "Model Beats Futures"),
+    caption   = "Point Forecast Accuracy vs Futures Price"
+  )
+```
+
+Based on the results in the table above, the model beats the futures price as a point forecast in every single month, ranging from 70.3% of the time (April) to 98.1% (March). This supports the claim that the error model is adding value over simply using the futures price as the expected settlement value.
 
 **Baseline comparison**
 
