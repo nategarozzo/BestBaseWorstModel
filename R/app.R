@@ -2,12 +2,12 @@
 library(shiny)
 library(tidyverse)
 library(lubridate)
-library(readxl)
+library(pdftools)
 
 source("monte_carlo_forecast.R")
+source("process_pdfs.R")
 model_bundle <- readRDS("model_bundle.rds")
 
-# Professional color palette — max 6 contracts
 CONTRACT_COLORS <- c(
   "#2C4F7C", "#1A7A5E", "#7C3D2C",
   "#4A2C7C", "#1A5F7A", "#7A5E1A"
@@ -38,8 +38,7 @@ ui <- fluidPage(
   
   titlePanel(
     div(
-      h2("ISONE DA LMP Futures Settlement Forecast",
-         class = "title"),
+      h2("ISONE DA LMP Futures Settlement Forecast", class = "title"),
       p("Bridge Energy Services · Model v1.0",
         style = "font-size:12px; color:#888; margin-top:-8px; font-family:'Georgia',serif;")
     )
@@ -50,9 +49,15 @@ ui <- fluidPage(
       width = 3,
       div(class = "sidebar-panel-title", "Data Upload"),
       fileInput(
-        "report_file",
-        "ICE Report (.xlsx)",
-        accept = ".xlsx",
+        "peak_file",
+        "Peak ICE Report (.pdf)",
+        accept = ".pdf",
+        placeholder = "No file selected"
+      ),
+      fileInput(
+        "offpeak_file",
+        "Off-Peak ICE Report (.pdf)",
+        accept = ".pdf",
         placeholder = "No file selected"
       ),
       dateInput(
@@ -77,16 +82,8 @@ ui <- fluidPage(
       width = 9,
       tabsetPanel(
         type = "tabs",
-        tabPanel(
-          "Forecast Results",
-          br(),
-          tableOutput("results_table")
-        ),
-        tabPanel(
-          "Distributions",
-          br(),
-          plotOutput("dist_plot", height = "480px")
-        )
+        tabPanel("Forecast Results", br(), tableOutput("results_table")),
+        tabPanel("Distributions",    br(), plotOutput("dist_plot", height = "480px"))
       ),
       br(),
       fluidRow(
@@ -102,16 +99,21 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   
   results <- eventReactive(input$run, {
-    req(input$report_file)
+    req(input$peak_file, input$offpeak_file)
     
-    contracts <- read_xlsx(input$report_file$datapath, skip = 1) |>
-      select(`CONTRACT MONTH`, PRICE) |>
-      rename(
-        contract_month = `CONTRACT MONTH`,
-        futures_price  = PRICE
+    # Parse both PDFs
+    peak_data    <- parse_ice_rec_pdf(input$peak_file$datapath)
+    offpeak_data <- parse_ice_rec_pdf(input$offpeak_file$datapath)
+    
+    # Average peak and off-peak settle prices
+    contracts <- peak_data |>
+      inner_join(
+        offpeak_data |> select(contract_month, settle_price),
+        by = "contract_month",
+        suffix = c("_peak", "_offpeak")
       ) |>
       mutate(
-        futures_price      = as.numeric(futures_price),
+        futures_price      = (settle_price_peak + settle_price_offpeak) / 2,
         delivery_month     = substr(contract_month, 1, 3),
         delivery_year      = as.integer(paste0("20", substr(contract_month, 4, 5))),
         report_month       = month(as.Date(input$report_date)),
@@ -161,7 +163,6 @@ server <- function(input, output, session) {
     }
   })
   
-  # Enforce max contracts
   observe({
     req(input$selected_contracts)
     if (length(input$selected_contracts) > MAX_CONTRACTS) {
@@ -241,10 +242,7 @@ server <- function(input, output, session) {
         label_text = paste0("$", round(price, 0))
       )
     
-    contract_order <- results() |>
-      filter(label %in% selected) |>
-      pull(contract_label)
-    
+    contract_order  <- results() |> filter(label %in% selected) |> pull(contract_label)
     contract_colors <- CONTRACT_COLORS[seq_along(contract_order)]
     names(contract_colors) <- contract_order
     
@@ -255,25 +253,16 @@ server <- function(input, output, session) {
       ggplot(aes(x = price, fill = contract_label, color = contract_label)) +
       geom_density(alpha = 0.15, linewidth = 0.9) +
       geom_vline(
-        data        = quantile_labels,
+        data      = quantile_labels,
         aes(xintercept = price, color = contract_label),
-        linetype    = "dashed",
-        linewidth   = 0.5,
-        alpha       = 0.85
+        linetype  = "dashed", linewidth = 0.5, alpha = 0.85
       ) +
       geom_label(
         data          = quantile_labels,
-        aes(x = price, y = density_val,
-            label = label_text,
-            color = contract_label),
-        vjust         = -0.3,
-        size          = 3.2,
-        fontface      = "bold",
-        show.legend   = FALSE,
-        fill          = "white",
-        label.size    = 0,
-        label.padding = unit(0.2, "lines"),
-        alpha         = 0.9
+        aes(x = price, y = density_val, label = label_text, color = contract_label),
+        vjust         = -0.3, size = 3.2, fontface = "bold",
+        show.legend   = FALSE, fill = "white",
+        label.size    = 0, label.padding = unit(0.2, "lines"), alpha = 0.9
       ) +
       scale_fill_manual(values  = contract_colors) +
       scale_color_manual(values = contract_colors) +
@@ -287,9 +276,7 @@ server <- function(input, output, session) {
         title    = "Simulated Settlement Price Distributions",
         subtitle = "Dashed lines indicate best (p05), base (p50), and worst case (p90) estimates",
         x        = "Simulated Settlement Price ($/MWh)",
-        y        = NULL,
-        fill     = NULL,
-        color    = NULL
+        y        = NULL, fill = NULL, color = NULL
       ) +
       theme_minimal(base_size = 14, base_family = "Georgia") +
       theme(
@@ -312,8 +299,7 @@ server <- function(input, output, session) {
   
   output$dist_plot <- renderPlot({
     req(results(), input$selected_contracts)
-    validate(need(length(input$selected_contracts) > 0,
-                  "Select at least one contract to plot."))
+    validate(need(length(input$selected_contracts) > 0, "Select at least one contract to plot."))
     build_plot(input$selected_contracts)
   })
   
