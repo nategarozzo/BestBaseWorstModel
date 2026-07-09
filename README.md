@@ -16,15 +16,15 @@ The app is designed for users who do not have to interact with the model directl
 
 The app takes in ICE daily futures reports and outputs both a table and visualization displaying the price settlement distribution for the contracts listed. To access the app, use [this link](https://nategarozzo.shinyapps.io/isone-lmp-forecast/), which takes you to an R Shiny application hosted on shinyapps.io. To make a forecast, upload PDFs of the daily ICE report for the contracts with codes "NEP" (ISONE peak) and "NOP" (ISONE off-peak).
 
-![](images/clipboard-1849558623.png)
+![](images/clipboard-1849558623.png){width="458"}
 
 After uploading and hitting "Run Forecast", a table detailing the price distributions for each contract appears:
 
-![](images/clipboard-458453692.png)
+![](images/clipboard-458453692.png){width="664"}
 
 Users may also inspect the distributions visually:
 
-![](images/clipboard-2362402721.png)
+![](images/clipboard-2362402721.png){width="660"}
 
 If you would like to download either the table as an excel sheet or an image of the distribution, you can do so by clicking near the bottom of the page:
 
